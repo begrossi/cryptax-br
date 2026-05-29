@@ -1,0 +1,19 @@
+# Backend
+backend/.venv/
+backend/cryptax.db
+backend/data/
+backend/.env
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.pyc
+backend/.pytest_cache/
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+
+# General
+.DS_Store
+*.egg-info/
+dist/
