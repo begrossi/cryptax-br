@@ -129,6 +129,16 @@ export interface IN1888Report {
   months_requiring_report: number[];
 }
 
+export interface COAFAlert {
+  transaction_id: number;
+  executed_at: string;
+  asset: string;
+  amount: string | number;
+  total_brl: string | number;
+  wallet_name: string;
+  reason: string;
+}
+
 export interface SyncLog {
   id: number;
   wallet_id: number;
