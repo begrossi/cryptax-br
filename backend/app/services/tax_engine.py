@@ -90,15 +90,67 @@ def effective_rate(tax_due: Decimal, taxable_gain: Decimal) -> Decimal:
     return (tax_due / taxable_gain).quantize(Decimal("0.0001"))
 
 
+def _easter(year: int) -> date:
+    """Anonymous Gregorian algorithm for Easter Sunday."""
+    a = year % 19
+    b, c = divmod(year, 100)
+    d, e = divmod(b, 4)
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = divmod(c, 4)
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    month = (h + l - 7 * m + 114) // 31
+    day = (h + l - 7 * m + 114) % 31 + 1
+    return date(year, month, day)
+
+
+def _br_holidays(year: int) -> frozenset[date]:
+    """
+    Brazilian national holidays (feriados nacionais) for a given year.
+
+    Fixed holidays: Lei 10.607/2002 + Lei 14.759/2023 (Consciência Negra).
+    Variable holidays: Good Friday (Easter − 2) and Corpus Christi (Easter + 60).
+
+    Note: Carnival (Tuesday) is a *facultative* banking holiday observed by the
+    Banco Central/financial system. It is included here because the Receita Federal
+    follows the BCB payment calendar for DARF due dates.
+    """
+    easter = _easter(year)
+    return frozenset({
+        date(year, 1, 1),                       # Confraternização Universal
+        date(year, 4, 21),                      # Tiradentes
+        date(year, 5, 1),                       # Dia do Trabalhador
+        date(year, 9, 7),                       # Independência do Brasil
+        date(year, 10, 12),                     # Nossa Senhora Aparecida
+        date(year, 11, 2),                      # Finados
+        date(year, 11, 15),                     # Proclamação da República
+        date(year, 11, 20),                     # Consciência Negra (Lei 14.759/2023)
+        date(year, 12, 25),                     # Natal
+        easter - timedelta(days=48),            # Segunda de Carnaval (facultativo BCB)
+        easter - timedelta(days=47),            # Terça de Carnaval (facultativo BCB)
+        easter - timedelta(days=2),             # Sexta-feira Santa
+        easter + timedelta(days=60),            # Corpus Christi
+    })
+
+
 def last_business_day(year: int, month: int) -> date:
-    """Return last business day (Mon–Fri) of the given year/month."""
+    """
+    Return last business day (Mon–Fri, not a Brazilian national holiday)
+    of the given year/month.
+    """
     if month == 12:
         next_month = date(year + 1, 1, 1)
     else:
         next_month = date(year, month + 1, 1)
     last = next_month - timedelta(days=1)
-    while last.weekday() >= 5:  # Sat=5, Sun=6
+    holidays = _br_holidays(last.year)
+    while last.weekday() >= 5 or last in holidays:
         last -= timedelta(days=1)
+        # Refresh holiday set if we crossed a year boundary
+        if last.year not in (year, last.year):
+            holidays = holidays | _br_holidays(last.year)
     return last
 
 
@@ -414,13 +466,22 @@ def in1888_report(transactions: list[TxRecord], year: int) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def coaf_alerts(transactions: list[TxRecord]) -> list[dict]:
-    """Return transactions exceeding the COAF R$10k single-transaction threshold."""
-    alerts = []
+    """
+    Return all COAF-relevant alerts:
+    1. Single transactions above R$10k.
+    2. Potential structuring: multiple sub-threshold transactions from the same
+       wallet on the same day whose combined value exceeds R$10k.
+       (Resolução COAF nº 36/2021 — fracionamento suspeito)
+    """
+    alerts: list[dict] = []
+
+    # --- Single-transaction threshold ---
     for tx in transactions:
         brl = tx.total_brl or Decimal(0)
         if brl > COAF_THRESHOLD_BRL:
             alerts.append({
-                "transaction_id": tx.id,
+                "alert_type": "single_transaction",
+                "transaction_ids": [tx.id],
                 "executed_at": tx.executed_at.isoformat(),
                 "asset": tx.asset,
                 "amount": tx.amount,
@@ -428,4 +489,33 @@ def coaf_alerts(transactions: list[TxRecord]) -> list[dict]:
                 "wallet_name": tx.wallet_name,
                 "reason": f"Transação única acima de R${COAF_THRESHOLD_BRL:,.0f}",
             })
-    return alerts
+
+    # --- Structuring: sub-threshold transactions that collectively exceed R$10k ---
+    # Group by (wallet_id, date); only consider transactions individually below the threshold.
+    groups: dict[tuple, list[TxRecord]] = defaultdict(list)
+    for tx in transactions:
+        brl = tx.total_brl or Decimal(0)
+        if Decimal(0) < brl < COAF_THRESHOLD_BRL:
+            groups[(tx.wallet_id, tx.executed_at)].append(tx)
+
+    for (wallet_id, day), group in groups.items():
+        if len(group) < 2:
+            continue
+        total = sum(t.total_brl or Decimal(0) for t in group)
+        if total > COAF_THRESHOLD_BRL:
+            assets = sorted({t.asset for t in group})
+            alerts.append({
+                "alert_type": "structuring",
+                "transaction_ids": [t.id for t in group],
+                "executed_at": day.isoformat(),
+                "asset": ", ".join(assets) if len(assets) == 1 else None,
+                "amount": None,
+                "total_brl": total,
+                "wallet_name": group[0].wallet_name,
+                "reason": (
+                    f"{len(group)} transações abaixo de R${COAF_THRESHOLD_BRL:,.0f} "
+                    f"no mesmo dia somam {total:,.2f} — possível fracionamento (Res. COAF 36/2021)"
+                ),
+            })
+
+    return sorted(alerts, key=lambda a: a["executed_at"])

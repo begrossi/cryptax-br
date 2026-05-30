@@ -176,7 +176,8 @@ async def coaf(year: int = Query(...), db: AsyncSession = Depends(get_db)):
     alerts_raw = tax_engine.coaf_alerts(records)
     return [
         COAFAlert(
-            transaction_id=a["transaction_id"],
+            alert_type=a["alert_type"],
+            transaction_ids=a["transaction_ids"],
             executed_at=a["executed_at"],
             asset=a["asset"],
             amount=a["amount"],

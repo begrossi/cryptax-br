@@ -17,6 +17,9 @@ from app.services.tax_engine import (
     in1888_report,
     coaf_alerts,
     darf_due_date,
+    last_business_day,
+    _easter,
+    _br_holidays,
     compute_progressive_tax,
     DARF_EXEMPT_BRL,
     TRADE_TYPES,
@@ -501,6 +504,132 @@ def test_earn_adds_to_cost_basis():
     monthly = compute_gains(txs)
     mk = MonthKey(2024, 1)
     assert monthly[mk]["ETH"]["gain"] == Decimal("5000")
+
+
+# ---------------------------------------------------------------------------
+# Issue 9: Holiday-aware DARF due dates
+# ---------------------------------------------------------------------------
+
+def test_easter_2024():
+    # Easter 2024 is March 31
+    assert _easter(2024) == date(2024, 3, 31)
+
+
+def test_easter_2025():
+    # Easter 2025 is April 20
+    assert _easter(2025) == date(2025, 4, 20)
+
+
+def test_tiradentes_april_21_is_holiday():
+    holidays = _br_holidays(2025)
+    assert date(2025, 4, 21) in holidays
+
+
+def test_good_friday_is_holiday():
+    # Easter 2025 = April 20 → Good Friday = April 18
+    holidays = _br_holidays(2025)
+    assert date(2025, 4, 18) in holidays
+
+
+def test_last_business_day_skips_holiday():
+    # April 2025: last calendar day = 30 (Wednesday) — not a holiday → should be Apr 30
+    result = last_business_day(2025, 4)
+    assert result == date(2025, 4, 30)
+
+
+def test_last_business_day_tiradentes_at_month_end():
+    # April 2021: April 30 = Friday (not holiday). Last business day = Apr 30.
+    # Tiradentes (Apr 21) doesn't affect the last day.
+    result = last_business_day(2021, 4)
+    assert result.weekday() < 5
+    assert result not in _br_holidays(2021)
+
+
+def test_last_business_day_christmas_at_month_end():
+    # December: last calendar day = 31. Dec 31, 2024 = Tuesday (not a holiday).
+    # Christmas (Dec 25) is in the middle, doesn't affect month-end.
+    result = last_business_day(2024, 12)
+    assert result.weekday() < 5
+    assert result not in _br_holidays(2024)
+    assert result.month == 12
+
+
+def test_last_business_day_new_year_forces_january_rollback():
+    # For a DARF due in January: last business day of January must skip Jan 1 (New Year)
+    # Jan 2025: Jan 1 = Wednesday (holiday). Last calendar day = Jan 31 (Friday, not holiday).
+    result = last_business_day(2025, 1)
+    assert result == date(2025, 1, 31)
+    assert result not in _br_holidays(2025)
+
+
+def test_due_date_month_ending_on_holiday():
+    # November 2025: Nov 30 = Sunday, Nov 29 = Saturday, Nov 28 = Friday
+    # Nov 15 (República) and Nov 20 (Consciência Negra) are holidays but not near month-end
+    result = last_business_day(2025, 11)
+    assert result == date(2025, 11, 28)
+
+
+# ---------------------------------------------------------------------------
+# Issue 10: COAF structuring detection
+# ---------------------------------------------------------------------------
+
+def test_coaf_single_transaction_alert():
+    txs = [tx(1, date(2024, 4, 10), "buy", "BTC", "0.1", "15000")]
+    alerts = coaf_alerts(txs)
+    single = [a for a in alerts if a["alert_type"] == "single_transaction"]
+    assert len(single) == 1
+    assert single[0]["transaction_ids"] == [1]
+    assert single[0]["asset"] == "BTC"
+
+
+def test_coaf_structuring_same_day_same_wallet():
+    txs = [
+        tx(1, date(2024, 5, 1), "buy", "BTC", "0.05", "4000", wallet_id=1),
+        tx(2, date(2024, 5, 1), "buy", "ETH", "0.1",  "4000", wallet_id=1),
+        tx(3, date(2024, 5, 1), "buy", "SOL", "10",   "4000", wallet_id=1),
+    ]
+    alerts = coaf_alerts(txs)
+    structuring = [a for a in alerts if a["alert_type"] == "structuring"]
+    assert len(structuring) == 1
+    assert set(structuring[0]["transaction_ids"]) == {1, 2, 3}
+    assert structuring[0]["total_brl"] == Decimal("12000")
+
+
+def test_coaf_no_structuring_when_individual_above_threshold():
+    # Individual transactions already trigger single-transaction alerts, not structuring
+    txs = [
+        tx(1, date(2024, 6, 1), "buy", "BTC", "1", "11000", wallet_id=1),
+        tx(2, date(2024, 6, 1), "buy", "ETH", "1", "11000", wallet_id=1),
+    ]
+    alerts = coaf_alerts(txs)
+    structuring = [a for a in alerts if a["alert_type"] == "structuring"]
+    assert structuring == []  # both individual → single_transaction alerts, not structuring
+
+
+def test_coaf_no_structuring_across_different_wallets():
+    txs = [
+        tx(1, date(2024, 7, 1), "buy", "BTC", "0.05", "6000", wallet_id=1),
+        tx(2, date(2024, 7, 1), "buy", "BTC", "0.05", "6000", wallet_id=2),
+    ]
+    alerts = coaf_alerts(txs)
+    structuring = [a for a in alerts if a["alert_type"] == "structuring"]
+    assert structuring == []
+
+
+def test_coaf_no_alert_when_sum_below_threshold():
+    txs = [
+        tx(1, date(2024, 8, 1), "buy", "BTC", "0.05", "3000", wallet_id=1),
+        tx(2, date(2024, 8, 1), "buy", "ETH", "0.1",  "2000", wallet_id=1),
+    ]
+    alerts = coaf_alerts(txs)
+    assert alerts == []
+
+
+def test_coaf_structuring_single_transaction_not_flagged_as_structuring():
+    # Only one transaction on the day → not structuring
+    txs = [tx(1, date(2024, 9, 1), "buy", "BTC", "0.05", "9999", wallet_id=1)]
+    alerts = coaf_alerts(txs)
+    assert alerts == []
 
 
 # ---------------------------------------------------------------------------

@@ -143,10 +143,11 @@ export interface IN1888Report {
 }
 
 export interface COAFAlert {
-  transaction_id: number;
+  alert_type: "single_transaction" | "structuring";
+  transaction_ids: number[];
   executed_at: string;
-  asset: string;
-  amount: string | number;
+  asset: string | null;
+  amount: string | number | null;
   total_brl: string | number;
   wallet_name: string;
   reason: string;

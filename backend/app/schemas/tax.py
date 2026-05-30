@@ -85,10 +85,11 @@ class IN1888Report(BaseModel):
 
 
 class COAFAlert(BaseModel):
-    transaction_id: int
+    alert_type: str              # "single_transaction" | "structuring"
+    transaction_ids: list[int]
     executed_at: str
-    asset: str
-    amount: Decimal
+    asset: str | None            # None when structuring spans multiple assets
+    amount: Decimal | None       # None for structuring alerts
     total_brl: Decimal
     wallet_name: str
-    reason: str  # "Single transaction > R$10k"
+    reason: str

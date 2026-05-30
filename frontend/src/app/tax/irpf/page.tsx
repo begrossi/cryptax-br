@@ -41,20 +41,38 @@ export default function IRPFPage() {
       </div>
 
       <TaxExplainer title="Como declarar criptoativos no IRPF">
-        <div className="space-y-2">
-          <p>
-            <strong>Bens e Direitos — Código 89:</strong> Informe cada criptomoeda que você possuía
-            em 31/12/{year}. O valor a declarar é o <em>custo de aquisição</em> em reais (não o
-            valor de mercado atual). Use o custo médio ponderado calculado abaixo.
-          </p>
-          <p>
-            <strong>Rendimentos Isentos:</strong> Ganhos em meses com total abaixo de R$&nbsp;35.000
-            (exchanges brasileiras) são isentos e vão em "Rendimentos Isentos — Ganhos com alienação".
-          </p>
-          <p>
-            <strong>Rendimentos Tributados Exclusivamente na Fonte:</strong> Ganhos tributados via
-            DARF ao longo do ano já foram pagos — informe-os em "Renda Variável".
-          </p>
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-2 text-xs">
+            <div className="bg-white rounded-lg p-3 border border-blue-100">
+              <div className="font-semibold text-slate-700 mb-1">📋 Bens e Direitos — Grupo 08, Código 89</div>
+              <p>
+                Informe cada criptomoeda que você possuía em 31/12/{year}. Valor = <em>custo de aquisição</em> em
+                reais (não o valor de mercado). Use o custo médio ponderado calculado abaixo.
+              </p>
+            </div>
+            <div className="bg-white rounded-lg p-3 border border-green-100">
+              <div className="font-semibold text-slate-700 mb-1">✅ Rendimentos Isentos e Não Tributáveis — Linha 26 (Outros)</div>
+              <p>
+                Ganhos em meses com total ≤ R$&nbsp;35.000 em exchanges brasileiras. Discriminação sugerida:{" "}
+                <em>&quot;Ganho na alienação de criptoativos — exchanges brasileiras — valor abaixo do limite de isenção (Lei 9.250/95 art. 22).&quot;</em>
+              </p>
+            </div>
+            <div className="bg-white rounded-lg p-3 border border-amber-100">
+              <div className="font-semibold text-slate-700 mb-1">💰 Renda Variável → Operações em Bolsa / Mercados</div>
+              <p>
+                Ganhos tributáveis já pagos via DARF ao longo do ano. Informe os valores mês a mês na aba{" "}
+                <em>Renda Variável</em> do programa IRPF. O imposto já pago via DARF é compensado automaticamente.
+              </p>
+            </div>
+            <div className="bg-white rounded-lg p-3 border border-purple-100">
+              <div className="font-semibold text-slate-700 mb-1">🌐 Exchanges estrangeiras — Ganho de Capital (código 0507)</div>
+              <p>
+                Ganhos em exchanges estrangeiras são tratados como <em>ganho de capital na alienação de bens</em>,
+                não como renda variável. Declare em <em>Ganhos de Capital</em> no programa GCAP, que gera o
+                DARF automaticamente (código 0507).
+              </p>
+            </div>
+          </div>
         </div>
       </TaxExplainer>
 
