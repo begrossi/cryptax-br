@@ -61,7 +61,7 @@ function ExchangePicker({
         onClick={() => setOpen(!open)}
         className="w-full flex items-center justify-between border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
       >
-        <span className={selected ? "text-slate-900" : "text-slate-400"}>
+        <span className={selected ? "text-slate-900" : "text-slate-600"}>
           {selected ? `${selected.name} (${selected.id})` : "Selecionar exchange…"}
         </span>
         <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
@@ -74,7 +74,7 @@ function ExchangePicker({
               <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               <input
                 autoFocus
-                className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
+                className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-500"
                 placeholder="Buscar exchange…"
                 value={query}
                 onChange={e => setQuery(e.target.value)}
@@ -122,7 +122,7 @@ function ExchangeOption({ exchange, selected, onSelect }: { exchange: ExchangeIn
       className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between hover:bg-blue-50 transition-colors ${selected ? "bg-blue-50 text-blue-700 font-medium" : ""}`}
     >
       <span>{exchange.name}</span>
-      <span className="text-xs text-slate-400 font-mono">{exchange.id}</span>
+      <span className="text-xs text-slate-500 font-mono">{exchange.id}</span>
     </button>
   );
 }
@@ -268,7 +268,7 @@ export default function WalletsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Passphrase <span className="text-slate-400 font-normal">(opcional — OKX, Coinbase Pro, etc.)</span>
+                  Passphrase <span className="text-slate-500 font-normal">(opcional — OKX, Coinbase Pro, etc.)</span>
                 </label>
                 <input
                   type="password"
