@@ -32,7 +32,7 @@ export default function GainsPage() {
 
   return (
     <div className="max-w-3xl space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Ganhos de Capital</h1>
           <p className="text-slate-500 text-sm mt-1">Resultado mensal por ativo com custo médio ponderado</p>
@@ -71,10 +71,10 @@ export default function GainsPage() {
         <>
           {/* Net result banner */}
           <div className={`rounded-xl p-5 border ${netGain > 0 ? "bg-amber-50 border-amber-200" : "bg-green-50 border-green-200"}`}>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="text-sm font-medium text-slate-600">Resultado líquido — {MONTHS[month - 1]} {year}</div>
-                <div className={`text-3xl font-bold mt-1 ${netGain > 0 ? "text-amber-700" : "text-green-700"}`}>
+                <div className={`text-2xl sm:text-3xl font-bold mt-1 ${netGain > 0 ? "text-amber-700" : "text-green-700"}`}>
                   {brl(report.net_gain_brl)}
                 </div>
               </div>
@@ -110,7 +110,7 @@ export default function GainsPage() {
                         {gain > 0 ? "+" : ""}{brl(asset.gain_brl)}
                       </span>
                     </div>
-                    <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
                       <div>
                         <div className="text-slate-500">Custo médio de venda</div>
                         <div className="font-mono mt-0.5">{brl(asset.avg_cost_brl)}</div>

@@ -63,7 +63,7 @@ export default function COAFPage() {
 
   return (
     <div className="max-w-4xl space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">COAF — Monitoramento AML</h1>
           <p className="text-slate-500 text-sm mt-1">Transações acima do limite e padrões suspeitos</p>
@@ -132,7 +132,7 @@ export default function COAFPage() {
             )}
           </div>
 
-          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+          <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>

@@ -10,7 +10,7 @@ function ObligationCard({ o }: { o: DARFObligation }) {
 
   return (
     <div className="bg-white border border-amber-200 rounded-xl p-5 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1">
           <div className="font-semibold text-lg">{monthName(o.month)} {o.year}</div>
           <div className="flex items-center gap-2">
@@ -101,7 +101,7 @@ export default function DARFPage() {
 
   return (
     <div className="max-w-3xl space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">DARF — Ganhos de Capital</h1>
           <p className="text-slate-500 text-sm mt-1">Imposto mensal sobre ganhos em criptomoedas</p>

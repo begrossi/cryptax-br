@@ -58,7 +58,7 @@ export default function SyncPage() {
 
   return (
     <div className="max-w-3xl space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Sincronizar</h1>
           <p className="text-slate-500 text-sm mt-1">Importe transações das suas carteiras</p>

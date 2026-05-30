@@ -45,7 +45,7 @@ export default function Dashboard() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {QUICK_LINKS.map(({ href, icon: Icon, title, desc, color }) => (
           <Link
             key={href}

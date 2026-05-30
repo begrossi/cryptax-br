@@ -89,18 +89,18 @@ export default function TransactionsPage() {
           Nenhuma transação encontrada. Sincronize suas carteiras primeiro.
         </div>
       ) : (
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+          <table className="w-full text-xs sm:text-sm min-w-[640px]">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-slate-600">Data</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-600">Tipo</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-600">Ativo</th>
-                <th className="text-right px-4 py-3 font-medium text-slate-600">Quantidade</th>
-                <th className="text-right px-4 py-3 font-medium text-slate-600">Valor (BRL)</th>
-                <th className="text-right px-4 py-3 font-medium text-slate-600">Preço unit.</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-600">Rede</th>
-                <th className="text-center px-4 py-3 font-medium text-slate-600">Auto-transf.</th>
+                <th className="text-left px-2 sm:px-4 py-3 font-medium text-slate-600">Data</th>
+                <th className="text-left px-2 sm:px-4 py-3 font-medium text-slate-600">Tipo</th>
+                <th className="text-left px-2 sm:px-4 py-3 font-medium text-slate-600">Ativo</th>
+                <th className="text-right px-2 sm:px-4 py-3 font-medium text-slate-600">Qtd.</th>
+                <th className="text-right px-2 sm:px-4 py-3 font-medium text-slate-600">Valor (BRL)</th>
+                <th className="text-right px-2 sm:px-4 py-3 font-medium text-slate-600 hidden sm:table-cell">Preço unit.</th>
+                <th className="text-left px-2 sm:px-4 py-3 font-medium text-slate-600 hidden sm:table-cell">Rede</th>
+                <th className="text-center px-2 sm:px-4 py-3 font-medium text-slate-600">↔</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -111,27 +111,27 @@ export default function TransactionsPage() {
                     tx.is_self_transfer ? "bg-slate-50 opacity-60" : "hover:bg-slate-50"
                   }`}
                 >
-                  <td className="px-4 py-3 text-slate-500">{formatDate(tx.executed_at)}</td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${TYPE_COLORS[tx.transaction_type] ?? "bg-slate-100 text-slate-700"}`}>
+                  <td className="px-2 sm:px-4 py-3 text-slate-500 whitespace-nowrap">{formatDate(tx.executed_at)}</td>
+                  <td className="px-2 sm:px-4 py-3">
+                    <span className={`px-1.5 py-0.5 rounded-full text-xs font-medium ${TYPE_COLORS[tx.transaction_type] ?? "bg-slate-100 text-slate-700"}`}>
                       {TYPE_LABELS[tx.transaction_type] ?? tx.transaction_type}
                     </span>
                     {tx.is_self_transfer && (
-                      <span className="ml-1.5 text-xs text-slate-400 italic">auto-transf.</span>
+                      <span className="ml-1 text-xs text-slate-400 italic hidden sm:inline">auto-transf.</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 font-mono font-medium">{tx.asset}</td>
-                  <td className="px-4 py-3 text-right font-mono">
-                    {parseFloat(tx.amount).toFixed(6)}
+                  <td className="px-2 sm:px-4 py-3 font-mono font-medium">{tx.asset}</td>
+                  <td className="px-2 sm:px-4 py-3 text-right font-mono">
+                    {parseFloat(tx.amount).toFixed(4)}
                   </td>
-                  <td className="px-4 py-3 text-right font-mono">
+                  <td className="px-2 sm:px-4 py-3 text-right font-mono whitespace-nowrap">
                     {brl(tx.total_brl)}
                   </td>
-                  <td className="px-4 py-3 text-right font-mono text-slate-500">
+                  <td className="px-2 sm:px-4 py-3 text-right font-mono text-slate-500 hidden sm:table-cell whitespace-nowrap">
                     {brl(tx.price_brl)}
                   </td>
-                  <td className="px-4 py-3 text-slate-400 text-xs">{tx.chain ?? "—"}</td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-2 sm:px-4 py-3 text-slate-400 text-xs hidden sm:table-cell">{tx.chain ?? "—"}</td>
+                  <td className="px-2 sm:px-4 py-3 text-center">
                     {TRANSFER_TYPES.has(tx.transaction_type) ? (
                       <button
                         title={tx.is_self_transfer ? "Desmarcar auto-transferência" : "Marcar como auto-transferência"}

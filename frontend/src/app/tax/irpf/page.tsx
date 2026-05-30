@@ -24,7 +24,7 @@ export default function IRPFPage() {
 
   return (
     <div className="max-w-3xl space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Declaração IRPF</h1>
           <p className="text-slate-500 text-sm mt-1">Dados para preencher sua declaração anual</p>
@@ -81,7 +81,7 @@ export default function IRPFPage() {
       {report && !loading && (
         <>
           {/* Summary */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-white border border-slate-200 rounded-xl p-4">
               <div className="text-sm text-slate-500">Custo total dos ativos</div>
               <div className="text-xl font-bold mt-1">{brl(report.total_cost_brl)}</div>
@@ -104,7 +104,7 @@ export default function IRPFPage() {
                 Nenhum ativo em carteira em {year}.
               </div>
             ) : (
-              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
@@ -152,7 +152,7 @@ export default function IRPFPage() {
                 (15%). A posição conservadora adotada pela maioria dos contadores é declarar
                 como renda tributável no ano do recebimento. Consulte um contador para sua situação.
               </TaxExplainer>
-              <div className="mt-3 bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <div className="mt-3 bg-white border border-slate-200 rounded-xl overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>

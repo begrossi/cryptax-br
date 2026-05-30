@@ -12,7 +12,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="pt-BR">
       <body className="flex bg-slate-50 text-slate-900 min-h-screen antialiased">
         <Sidebar />
-        <main className="flex-1 overflow-auto p-8">{children}</main>
+        <main className="flex-1 overflow-auto pt-16 md:pt-0 p-4 md:p-8">{children}</main>
       </body>
     </html>
   );
