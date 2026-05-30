@@ -21,10 +21,22 @@ Seus dados ficam na sua máquina. Nenhuma transação ou chave de API é enviada
 
 ## Fontes de dados suportadas
 
-**Exchanges:**
-- Binance (spot trades, depósitos, saques)
-- Foxbit _(em breve)_
-- Mercado Bitcoin _(em breve)_
+**Exchanges — via [CCXT](https://github.com/ccxt/ccxt) (111 exchanges suportadas):**
+
+Qualquer exchange suportada pelo CCXT pode ser conectada. Exemplos:
+
+| Exchange | ID CCXT | Brasileira |
+|---|---|---|
+| Binance | `binance` | não |
+| Foxbit | `foxbit` | ✅ sim |
+| Mercado Bitcoin | `mercadobitcoin` | ✅ sim |
+| Coinbase | `coinbaseadvanced` | não |
+| Kraken | `kraken` | não |
+| Bybit | `bybit` | não |
+| OKX | `okx` | não |
+| KuCoin | `kucoin` | não |
+
+Ao adicionar uma carteira, escolha a exchange em uma lista filtrável com todos os 111 IDs disponíveis.
 
 **On-chain (DeFi):**
 - EVM: Ethereum, BSC, Polygon, Arbitrum, Base, Optimism
@@ -100,7 +112,7 @@ DATABASE_URL=sqlite+aiosqlite:///./cryptax.db
 ## Como usar
 
 1. **Adicione suas carteiras** em `/wallets`
-   - Exchanges: informe API Key + Secret (somente leitura é suficiente)
+   - Exchanges: escolha a exchange na lista filtrável, informe API Key + Secret (somente leitura é suficiente). Algumas exchanges (OKX, Coinbase Pro) exigem também uma _passphrase_.
    - On-chain: informe o endereço público (0x…)
    - Marque se a exchange é brasileira — isso afeta o cálculo do limite de isenção do DARF
 
@@ -146,7 +158,7 @@ cryptax-br/
   backend/
     app/
       services/tax_engine.py       # Motor tributário (puro Python, sem I/O)
-      integrations/exchanges/      # Binance, Foxbit, Mercado Bitcoin
+      integrations/exchanges/      # CCXTExchange — qualquer exchange via CCXT
       integrations/onchain/        # EVM (Etherscan-compatible), Solana, Bitcoin
       integrations/prices/         # CoinGecko com cache
       routers/                     # Endpoints FastAPI
@@ -165,12 +177,12 @@ cryptax-br/
 
 PRs são bem-vindos. Áreas prioritárias:
 
-- [ ] Integração Foxbit e Mercado Bitcoin
 - [ ] Suporte a Bitcoin (mempool.space)
 - [ ] Suporte a Solana (Helius)
 - [ ] Exportação de relatório em PDF
-- [ ] Importação de CSV de exchanges (fallback offline)
+- [ ] Importação de CSV de exchanges (fallback offline para exchanges sem API)
 - [ ] Suporte a PostgreSQL como banco principal (já preparado no código)
+- [ ] Auto-detecção de auto-transferências por correspondência de asset/valor/data entre carteiras
 
 ---
 
