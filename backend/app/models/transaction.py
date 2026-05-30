@@ -48,5 +48,7 @@ class Transaction(Base):
 
     chain: Mapped[str | None] = mapped_column(String(30), nullable=True)  # "ethereum", "bsc", etc.
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # True = moving between own wallets; skipped in all tax calculations
+    is_self_transfer: Mapped[bool] = mapped_column(default=False, server_default="0")
 
     wallet: Mapped["Wallet"] = relationship(back_populates="transactions")

@@ -43,6 +43,7 @@ class TxRecord:
     total_brl: Decimal | None
     counterpart_asset: str | None = None
     counterpart_amount: Decimal | None = None
+    is_self_transfer: bool = False
 
 
 @dataclass
@@ -144,6 +145,12 @@ def _compute_gains_split(
     )
 
     for tx in sorted(transactions, key=lambda t: t.executed_at):
+        # Self-transfers are pure custody moves — skip entirely.
+        # Both the outgoing and incoming legs must be marked to keep the
+        # cost basis correct; skipping only one side would corrupt the pool.
+        if tx.is_self_transfer:
+            continue
+
         mk = MonthKey(tx.executed_at.year, tx.executed_at.month)
         brl = tx.total_brl or Decimal(0)
         monthly = br_monthly if tx.is_brazilian_exchange else foreign_monthly
@@ -170,6 +177,19 @@ def _compute_gains_split(
                 monthly[mk][tx.asset]["loss"] += abs(gain)
 
             cb["total_cost"] = max(Decimal(0), cb["total_cost"] - cost_of_sold)
+            cb["quantity"] = max(Decimal(0), cb["quantity"] - tx.amount)
+
+        elif tx.transaction_type == "fee":
+            # On-chain gas fees: the fee token (ETH, BNB) is consumed at 0 proceeds.
+            # Gain = 0 − avg_cost × amount = a loss equal to the BRL cost of the gas.
+            # This correctly deducts gas from the user's overall gains for the month.
+            cb = cost_basis[tx.asset]
+            avg = cb["total_cost"] / cb["quantity"] if cb["quantity"] > 0 else Decimal(0)
+            cost_of_gas = avg * tx.amount
+
+            monthly[mk][tx.asset]["loss"] += cost_of_gas
+
+            cb["total_cost"] = max(Decimal(0), cb["total_cost"] - cost_of_gas)
             cb["quantity"] = max(Decimal(0), cb["quantity"] - tx.amount)
 
     return (
@@ -210,11 +230,19 @@ def get_cost_basis_snapshot(transactions: list[TxRecord]) -> dict[str, dict]:
         lambda: {"total_cost": Decimal(0), "quantity": Decimal(0)}
     )
     for tx in sorted(transactions, key=lambda t: t.executed_at):
+        if tx.is_self_transfer:
+            continue
         if tx.transaction_type in ("buy", "transfer_in", "earn", "swap_in"):
             cb = cost_basis[tx.asset]
             cb["total_cost"] += tx.total_brl or Decimal(0)
             cb["quantity"] += tx.amount
         elif tx.transaction_type in ("sell", "transfer_out", "swap_out"):
+            cb = cost_basis[tx.asset]
+            if cb["quantity"] > 0:
+                avg = cb["total_cost"] / cb["quantity"]
+                cb["total_cost"] = max(Decimal(0), cb["total_cost"] - avg * tx.amount)
+                cb["quantity"] = max(Decimal(0), cb["quantity"] - tx.amount)
+        elif tx.transaction_type == "fee":
             cb = cost_basis[tx.asset]
             if cb["quantity"] > 0:
                 avg = cb["total_cost"] / cb["quantity"]
@@ -308,6 +336,35 @@ def darf_obligations(transactions: list[TxRecord], year: int) -> list[dict]:
             })
 
     return obligations
+
+
+# ---------------------------------------------------------------------------
+# Earn income (staking rewards, airdrops)
+# ---------------------------------------------------------------------------
+
+def earn_income_by_year(transactions: list[TxRecord], year: int) -> list[dict]:
+    """
+    Aggregate 'earn' transactions (staking, airdrops, yield) by asset for a given year.
+
+    Under Brazilian law, the RFB has not issued definitive guidance on whether
+    staking/airdrops are taxed as income at receipt (progressive rates up to 27.5%)
+    or only as capital gains on eventual disposal (15%). The conservative and
+    widely-adopted accountant position is to declare them as income at receipt.
+    This function surfaces them so the user can decide with their accountant.
+    """
+    totals: dict[str, dict] = defaultdict(lambda: {"total_brl": Decimal(0), "count": 0})
+    for tx in transactions:
+        if tx.transaction_type != "earn":
+            continue
+        if tx.executed_at.year != year:
+            continue
+        totals[tx.asset]["total_brl"] += tx.total_brl or Decimal(0)
+        totals[tx.asset]["count"] += 1
+    return [
+        {"asset": asset, "total_brl": data["total_brl"], "transaction_count": data["count"]}
+        for asset, data in sorted(totals.items())
+        if data["total_brl"] > 0
+    ]
 
 
 # ---------------------------------------------------------------------------

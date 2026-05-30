@@ -21,6 +21,7 @@ class TransactionRead(BaseModel):
     counterpart_amount: Decimal | None
     chain: str | None
     notes: str | None
+    is_self_transfer: bool
 
 
 class TransactionSummary(BaseModel):

@@ -1,3 +1,4 @@
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -19,3 +20,16 @@ async def get_db() -> AsyncSession:
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await _migrate(conn)
+
+
+async def _migrate(conn) -> None:
+    """Add columns introduced after the initial schema."""
+    migrations = [
+        "ALTER TABLE transactions ADD COLUMN is_self_transfer BOOLEAN NOT NULL DEFAULT 0",
+    ]
+    for stmt in migrations:
+        try:
+            await conn.execute(text(stmt))
+        except Exception:
+            pass  # column already exists

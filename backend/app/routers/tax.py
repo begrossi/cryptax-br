@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import Transaction, Wallet
-from app.schemas.tax import GainReport, AssetGain, DARFReport, DARFObligation, IRPFReport, IRPFAsset, IN1888Report, IN1888Entry, COAFAlert
+from app.schemas.tax import GainReport, AssetGain, DARFReport, DARFObligation, IRPFReport, IRPFAsset, EarnIncomeEntry, IN1888Report, IN1888Entry, COAFAlert
 from app.services import tax_engine
 from app.services.tax_engine import TxRecord
 
@@ -30,6 +30,7 @@ async def _load_tx_records(session: AsyncSession, year: int | None = None) -> li
             asset=tx.asset,
             amount=tx.amount,
             total_brl=tx.total_brl,
+            is_self_transfer=tx.is_self_transfer,
         ))
     return records
 
@@ -132,11 +133,19 @@ async def irpf(year: int = Query(...), db: AsyncSession = Depends(get_db)):
         if net > 0 and net <= tax_engine.DARF_EXEMPT_BRL:
             exempt_total += net
 
+    earn_raw = tax_engine.earn_income_by_year(records, year)
+    earn_entries = [
+        EarnIncomeEntry(asset=e["asset"], total_brl=e["total_brl"], transaction_count=e["transaction_count"])
+        for e in earn_raw
+    ]
+
     return IRPFReport(
         year=year, assets=assets,
         total_cost_brl=sum(a.total_cost_brl for a in assets),
         exempt_gains_brl=exempt_total,
         taxable_gains_brl=taxable_total,
+        earn_income=earn_entries,
+        earn_income_total_brl=sum(e.total_brl for e in earn_entries),
     )
 
 

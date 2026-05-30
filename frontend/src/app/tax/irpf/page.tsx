@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { api, IRPFReport } from "@/lib/api";
+import { api, IRPFReport, EarnIncomeEntry } from "@/lib/api";
 import { TaxExplainer } from "@/components/TaxExplainer";
 import { brl } from "@/lib/format";
 
@@ -120,6 +120,46 @@ export default function IRPFPage() {
               calculado pelo método do custo médio ponderado.&quot;
             </em>
           </TaxExplainer>
+
+          {/* Earn income */}
+          {report.earn_income.length > 0 && (
+            <div>
+              <h2 className="font-semibold mb-3">
+                Rendimentos recebidos (staking, airdrops) em {year}
+              </h2>
+              <TaxExplainer title="Atenção: zona cinzenta regulatória" variant="warning">
+                A Receita Federal ainda não emitiu orientação definitiva sobre se rendimentos de
+                staking e airdrops são tributados <strong>como renda no momento do recebimento</strong>{" "}
+                (tabela progressiva, até 27,5%) ou <strong>somente como ganho de capital na venda</strong>{" "}
+                (15%). A posição conservadora adotada pela maioria dos contadores é declarar
+                como renda tributável no ano do recebimento. Consulte um contador para sua situação.
+              </TaxExplainer>
+              <div className="mt-3 bg-white border border-slate-200 rounded-xl overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                      <th className="text-left px-4 py-3 font-medium text-slate-600">Ativo</th>
+                      <th className="text-right px-4 py-3 font-medium text-slate-600">Operações</th>
+                      <th className="text-right px-4 py-3 font-medium text-slate-600">Total recebido (BRL)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {report.earn_income.map((e: EarnIncomeEntry) => (
+                      <tr key={e.asset} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 font-mono font-semibold">{e.asset}</td>
+                        <td className="px-4 py-3 text-right">{e.transaction_count}</td>
+                        <td className="px-4 py-3 text-right font-mono font-medium">{brl(e.total_brl)}</td>
+                      </tr>
+                    ))}
+                    <tr className="bg-slate-50 font-semibold">
+                      <td className="px-4 py-3" colSpan={2}>Total</td>
+                      <td className="px-4 py-3 text-right font-mono">{brl(report.earn_income_total_brl)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>

@@ -52,14 +52,20 @@ class IRPFAsset(BaseModel):
     description: str
 
 
+class EarnIncomeEntry(BaseModel):
+    asset: str
+    total_brl: Decimal
+    transaction_count: int
+
+
 class IRPFReport(BaseModel):
     year: int
     assets: list[IRPFAsset]
     total_cost_brl: Decimal
-    # Rendimentos isentos (gains from BR exchanges below R$35k/month)
-    exempt_gains_brl: Decimal
-    # Ganhos tributáveis (already reported via DARF)
-    taxable_gains_brl: Decimal
+    exempt_gains_brl: Decimal   # gains from BR exchanges below R$35k/month
+    taxable_gains_brl: Decimal  # gains paid via DARF
+    earn_income: list[EarnIncomeEntry]   # staking rewards / airdrops received
+    earn_income_total_brl: Decimal
 
 
 class IN1888Entry(BaseModel):

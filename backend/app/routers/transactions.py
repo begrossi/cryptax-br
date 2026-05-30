@@ -1,5 +1,6 @@
 from datetime import date
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -63,7 +64,7 @@ async def transactions_summary(
     result = await db.execute(stmt)
     rows = result.all()
 
-    from decimal import Decimal
+    from decimal import Decimal  # noqa: PLC0415
     return [
         TransactionSummary(
             year=int(r.yr),
@@ -76,3 +77,26 @@ async def transactions_summary(
         )
         for r in rows
     ]
+
+
+class SelfTransferUpdate(BaseModel):
+    is_self_transfer: bool
+
+
+@router.patch("/{tx_id}/self-transfer", response_model=TransactionRead)
+async def toggle_self_transfer(
+    tx_id: int,
+    body: SelfTransferUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark (or unmark) a transfer as a self-transfer between own wallets.
+    Both the outgoing and incoming legs must be marked to avoid cost-basis distortion."""
+    tx = await db.get(Transaction, tx_id)
+    if not tx:
+        raise HTTPException(404, "Transaction not found")
+    if tx.transaction_type not in (TransactionType.transfer_in, TransactionType.transfer_out):
+        raise HTTPException(400, "Only transfer_in / transfer_out can be marked as self-transfers")
+    tx.is_self_transfer = body.is_self_transfer
+    await db.commit()
+    await db.refresh(tx)
+    return tx

@@ -13,6 +13,7 @@ from app.services.tax_engine import (
     compute_gains,
     get_cost_basis_snapshot,
     darf_obligations,
+    earn_income_by_year,
     in1888_report,
     coaf_alerts,
     darf_due_date,
@@ -360,6 +361,151 @@ def test_coaf_ignores_small_tx():
     txs = [tx(1, date(2024, 4, 10), "buy", "BTC", "0.01", "5000")]
     assert coaf_alerts(txs) == []
 
+
+# ---------------------------------------------------------------------------
+# Issue 5: Gas fees reduce cost basis (treated as disposal at 0 proceeds)
+# ---------------------------------------------------------------------------
+
+def test_fee_generates_loss_equal_to_gas_cost():
+    txs = [
+        tx(1, date(2024, 1, 1), "buy", "ETH", "1", "10000"),     # 1 ETH @ 10k cost
+        tx(2, date(2024, 1, 5), "fee", "ETH", "0.01", "100"),    # 0.01 ETH gas = 100 BRL cost
+    ]
+    monthly = compute_gains(txs)
+    mk = MonthKey(2024, 1)
+    # Loss = avg_cost(10k) * 0.01 = 100 BRL (gas correctly deducted)
+    assert monthly[mk]["ETH"]["loss"] == Decimal("100")
+
+
+def test_fee_reduces_cost_basis_snapshot():
+    txs = [
+        tx(1, date(2024, 1, 1), "buy", "ETH", "2", "20000"),    # 2 ETH @ 10k avg
+        tx(2, date(2024, 1, 5), "fee", "ETH", "0.1", "0"),      # 0.1 ETH burned as gas
+    ]
+    snapshot = get_cost_basis_snapshot(txs)
+    # Remaining: 1.9 ETH, cost = 20k - (10k * 0.1) = 19k
+    assert snapshot["ETH"]["quantity"] == Decimal("1.9")
+    assert snapshot["ETH"]["total_cost"] == Decimal("19000")
+
+
+def test_fee_reduces_darf_taxable_gain():
+    txs = [
+        tx(1, date(2024, 1, 1), "buy",  "ETH", "1", "10000"),   # buy 1 ETH @ 10k
+        tx(2, date(2024, 1, 5), "fee",  "ETH", "0.1", "0"),     # gas: 0.1 ETH @ 10k avg = 1k loss
+        tx(3, date(2024, 1, 20), "sell", "ETH", "0.9", "18000"), # sell 0.9 ETH
+    ]
+    # After fee: 0.9 ETH remains, avg cost = 10k; sell proceeds = 18k; gain = 18k - 9k = 9k
+    # Plus fee loss = 1k → net = 9k - 1k = 8k → below 35k exemption → no DARF
+    # Actually: fee creates 1k loss in Jan. Sell creates 9k gain. Net = 8k. Below 35k → no DARF.
+    obligations = darf_obligations(txs, 2024)
+    assert obligations == []
+
+
+# ---------------------------------------------------------------------------
+# Issue 6: Self-transfers are skipped in tax calculations
+# ---------------------------------------------------------------------------
+
+def self_tx(
+    id: int,
+    day: date,
+    tx_type: str,
+    asset: str,
+    amount: str,
+    total_brl: str,
+    wallet_id: int = 1,
+) -> TxRecord:
+    return TxRecord(
+        id=id, wallet_id=wallet_id, wallet_name="Test",
+        is_brazilian_exchange=True,
+        executed_at=day,
+        transaction_type=tx_type,
+        asset=asset,
+        amount=Decimal(amount),
+        total_brl=Decimal(total_brl),
+        is_self_transfer=True,
+    )
+
+
+def test_self_transfer_does_not_create_gain_or_loss():
+    txs = [
+        tx(1, date(2024, 2, 1), "buy",          "BTC", "1", "100000"),
+        # Self-transfer out from wallet A
+        self_tx(2, date(2024, 2, 10), "transfer_out", "BTC", "1", "120000", wallet_id=1),
+        # Self-transfer in to wallet B
+        self_tx(3, date(2024, 2, 10), "transfer_in",  "BTC", "1", "120000", wallet_id=2),
+    ]
+    monthly = compute_gains(txs)
+    mk = MonthKey(2024, 2)
+    # No gain/loss from the self-transfer
+    assert monthly[mk]["BTC"]["gain"] == Decimal("0")
+    assert monthly[mk]["BTC"]["loss"] == Decimal("0")
+
+
+def test_self_transfer_preserves_cost_basis():
+    txs = [
+        tx(1, date(2024, 3, 1), "buy",          "ETH", "2", "20000"),
+        self_tx(2, date(2024, 3, 15), "transfer_out", "ETH", "2", "30000", wallet_id=1),
+        self_tx(3, date(2024, 3, 15), "transfer_in",  "ETH", "2", "30000", wallet_id=2),
+        tx(4, date(2024, 3, 25), "sell",         "ETH", "2", "40000", wallet_id=2),
+    ]
+    # Sell on wallet B: cost basis should still be 20k (original buy), gain = 40k - 20k = 20k
+    monthly = compute_gains(txs)
+    mk = MonthKey(2024, 3)
+    assert monthly[mk]["ETH"]["gain"] == Decimal("20000")
+
+
+def test_non_self_transfer_out_still_taxable():
+    txs = [
+        tx(1, date(2024, 4, 1),  "buy",          "BTC", "1", "100000"),
+        tx(2, date(2024, 4, 15), "transfer_out", "BTC", "1", "150000"),  # withdrawal, not self
+    ]
+    # transfer_out to unknown → disposal → gain = 50k
+    monthly = compute_gains(txs)
+    mk = MonthKey(2024, 4)
+    assert monthly[mk]["BTC"]["gain"] == Decimal("50000")
+
+
+# ---------------------------------------------------------------------------
+# Issue 7: Earn income surfaced separately
+# ---------------------------------------------------------------------------
+
+def test_earn_income_aggregated_by_asset():
+    txs = [
+        tx(1, date(2024, 5, 1),  "earn", "ETH", "0.5", "5000"),
+        tx(2, date(2024, 5, 15), "earn", "ETH", "0.3", "3200"),
+        tx(3, date(2024, 6, 1),  "earn", "SOL", "10",  "2000"),
+    ]
+    report = earn_income_by_year(txs, 2024)
+    assets = {e["asset"]: e for e in report}
+    assert assets["ETH"]["total_brl"] == Decimal("8200")
+    assert assets["ETH"]["transaction_count"] == 2
+    assert assets["SOL"]["total_brl"] == Decimal("2000")
+
+
+def test_earn_income_filtered_by_year():
+    txs = [
+        tx(1, date(2023, 12, 1), "earn", "BTC", "0.01", "1500"),
+        tx(2, date(2024, 1, 1),  "earn", "BTC", "0.01", "1600"),
+    ]
+    report = earn_income_by_year(txs, 2024)
+    assert len(report) == 1
+    assert report[0]["total_brl"] == Decimal("1600")
+
+
+def test_earn_adds_to_cost_basis():
+    txs = [
+        tx(1, date(2024, 1, 1),  "earn", "ETH", "1", "10000"),   # received 1 ETH as staking, BRL value 10k
+        tx(2, date(2024, 1, 20), "sell", "ETH", "1", "15000"),   # sold at 15k
+    ]
+    # Cost basis = 10k (earn value), gain = 15k - 10k = 5k
+    monthly = compute_gains(txs)
+    mk = MonthKey(2024, 1)
+    assert monthly[mk]["ETH"]["gain"] == Decimal("5000")
+
+
+# ---------------------------------------------------------------------------
+# Pre-existing tests
+# ---------------------------------------------------------------------------
 
 def test_cost_basis_snapshot():
     txs = [

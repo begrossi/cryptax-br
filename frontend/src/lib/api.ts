@@ -16,6 +16,8 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  patch: <T>(path: string, body?: unknown) =>
+    request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 };
 
@@ -55,6 +57,7 @@ export interface Transaction {
   cost_basis_brl: string | null;
   chain: string | null;
   notes: string | null;
+  is_self_transfer: boolean;
 }
 
 // Tax
@@ -108,12 +111,20 @@ export interface IRPFAsset {
   description: string;
 }
 
+export interface EarnIncomeEntry {
+  asset: string;
+  total_brl: string;
+  transaction_count: number;
+}
+
 export interface IRPFReport {
   year: number;
   assets: IRPFAsset[];
   total_cost_brl: string;
   exempt_gains_brl: string;
   taxable_gains_brl: string;
+  earn_income: EarnIncomeEntry[];
+  earn_income_total_brl: string;
 }
 
 export interface IN1888Entry {
