@@ -5,8 +5,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models import Wallet, SyncLog
 from app.services.sync_service import sync_wallet
+from app.services.self_transfer_detector import detect_self_transfers
 
 router = APIRouter(prefix="/sync", tags=["sync"])
+
+
+@router.post("/detect-self-transfers")
+async def run_detect_self_transfers(db: AsyncSession = Depends(get_db)):
+    """
+    Scan all transfer_in / transfer_out transactions and auto-mark pairs
+    that look like self-transfers between own wallets.
+    """
+    marked = await detect_self_transfers(db)
+    await db.commit()
+    pairs = marked // 2
+    return {
+        "transactions_marked": marked,
+        "pairs_found": pairs,
+        "message": (
+            f"{pairs} par(es) de auto-transferência detectado(s) e marcado(s)."
+            if pairs else "Nenhum par de auto-transferência detectado."
+        ),
+    }
 
 
 @router.post("/{wallet_id}")
@@ -52,10 +72,13 @@ async def sync_status(db: AsyncSession = Depends(get_db)):
     ]
 
 
-async def _run_sync(wallet_id: int):
+async def _run_sync(wallet_id: int) -> None:
     from app.database import AsyncSessionLocal
     async with AsyncSessionLocal() as session:
         try:
             await sync_wallet(session, wallet_id)
+            # Auto-detect self-transfers after every sync
+            await detect_self_transfers(session)
+            await session.commit()
         except Exception:
             pass  # errors are persisted to sync_log by sync_wallet
