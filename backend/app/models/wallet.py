@@ -8,9 +8,13 @@ from app.database import Base
 
 
 class WalletType(str, enum.Enum):
+    # Generic CCXT exchange — exchange_id stored in credentials JSON
+    ccxt_exchange = "ccxt_exchange"
+    # Legacy values kept for backward compatibility (map to CCXT IDs in sync_service)
     binance = "binance"
     foxbit = "foxbit"
     mercado_bitcoin = "mercado_bitcoin"
+    # On-chain addresses
     evm_address = "evm_address"
     solana_address = "solana_address"
     bitcoin_address = "bitcoin_address"

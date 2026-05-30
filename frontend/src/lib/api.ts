@@ -23,8 +23,15 @@ export const api = {
 
 // Wallet
 export type WalletType =
+  | "ccxt_exchange"
   | "binance" | "foxbit" | "mercado_bitcoin"
   | "evm_address" | "solana_address" | "bitcoin_address";
+
+export interface ExchangeInfo {
+  id: string;
+  name: string;
+  popular: boolean;
+}
 
 export interface Wallet {
   id: number;
@@ -32,11 +39,14 @@ export interface Wallet {
   wallet_type: WalletType;
   is_brazilian_exchange: boolean;
   created_at: string;
+  exchange_id: string | null;
 }
 
 export interface WalletCreate {
   name: string;
   wallet_type: WalletType;
+  exchange_id?: string;
+  password?: string;
   api_key?: string;
   api_secret?: string;
   address?: string;

@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import init_db
 from app.routers import wallets, sync, transactions, tax
+from app.routers.wallets import exchanges_router
 
 
 @asynccontextmanager
@@ -28,6 +29,7 @@ app.add_middleware(
 )
 
 app.include_router(wallets.router)
+app.include_router(exchanges_router)
 app.include_router(sync.router)
 app.include_router(transactions.router)
 app.include_router(tax.router)

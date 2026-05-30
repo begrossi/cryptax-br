@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "aiosqlite>=0.22.1",
     "alembic>=1.18.4",
+    "ccxt>=4.4",
     "cryptography>=48.0.0",
     "fastapi>=0.136.3",
     "httpx>=0.28.1",

@@ -11,16 +11,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.integrations.exchanges.base import RawTransaction
-from app.integrations.exchanges.binance import BinanceExchange
+from app.integrations.exchanges.ccxt_exchange import CCXTExchange
 from app.integrations.onchain.base import OnChainTransaction
 from app.integrations.onchain.evm import EVMProvider, CHAIN_CONFIG
 from app.integrations.prices.coingecko import fetch_price_brl
 from app.models import Transaction, TransactionType, Wallet, WalletType, SyncLog, SyncStatus, AssetPrice
 from app.services.crypto import decrypt_credentials
 
-
-EXCHANGE_HANDLERS = {
-    WalletType.binance: BinanceExchange(),
+# Maps legacy WalletType enum values to their CCXT exchange IDs
+LEGACY_EXCHANGE_MAP: dict[WalletType, str] = {
+    WalletType.binance: "binance",
+    WalletType.foxbit: "foxbit",
+    WalletType.mercado_bitcoin: "mercadobitcoin",
 }
 
 ONCHAIN_WALLET_TYPES = {
@@ -28,6 +30,16 @@ ONCHAIN_WALLET_TYPES = {
     WalletType.solana_address,
     WalletType.bitcoin_address,
 }
+
+
+def _get_ccxt_exchange_id(wallet: Wallet) -> str | None:
+    """Return the CCXT exchange ID for a wallet, or None if it's not an exchange wallet."""
+    if wallet.wallet_type == WalletType.ccxt_exchange:
+        try:
+            return decrypt_credentials(wallet.credentials).get("exchange_id")
+        except Exception:
+            return None
+    return LEGACY_EXCHANGE_MAP.get(wallet.wallet_type)
 
 
 async def get_or_fetch_price(
@@ -71,7 +83,7 @@ async def sync_wallet(session: AsyncSession, wallet_id: int) -> SyncLog:
 
 
 async def _do_sync(session: AsyncSession, wallet: Wallet) -> int:
-    # Find last synced date to avoid re-fetching everything
+    # Find last synced date for incremental sync
     stmt = select(Transaction.executed_at).where(
         Transaction.wallet_id == wallet.id
     ).order_by(Transaction.executed_at.desc()).limit(1)
@@ -80,16 +92,19 @@ async def _do_sync(session: AsyncSession, wallet: Wallet) -> int:
 
     raw_txs: list[RawTransaction | OnChainTransaction] = []
 
-    if wallet.wallet_type in EXCHANGE_HANDLERS:
-        handler = EXCHANGE_HANDLERS[wallet.wallet_type]
+    exchange_id = _get_ccxt_exchange_id(wallet)
+    if exchange_id:
         creds = decrypt_credentials(wallet.credentials)
-        raw_txs = await handler.fetch_transactions(
-            creds["api_key"], creds["api_secret"], since=since
+        raw_txs = await CCXTExchange().fetch_transactions(
+            api_key=creds["api_key"],
+            api_secret=creds["api_secret"],
+            since=since,
+            exchange_id=exchange_id,
+            password=creds.get("password"),
         )
     elif wallet.wallet_type in ONCHAIN_WALLET_TYPES:
-        address = wallet.credentials  # stored as plaintext for on-chain
+        address = wallet.credentials
         if wallet.wallet_type == WalletType.evm_address:
-            # Try all configured EVM chains
             for chain in CHAIN_CONFIG:
                 provider = EVMProvider(chain)
                 txs = await provider.fetch_transactions(address, since=since)
@@ -98,7 +113,6 @@ async def _do_sync(session: AsyncSession, wallet: Wallet) -> int:
     added = 0
     for raw in raw_txs:
         external_id = raw.external_id
-        # Deduplication check
         exists = (await session.execute(
             select(Transaction).where(
                 Transaction.wallet_id == wallet.id,
@@ -108,7 +122,6 @@ async def _do_sync(session: AsyncSession, wallet: Wallet) -> int:
         if exists:
             continue
 
-        # Resolve BRL price
         asset = raw.asset
         tx_date = raw.executed_at if isinstance(raw.executed_at, date) else raw.executed_at
 
@@ -116,7 +129,6 @@ async def _do_sync(session: AsyncSession, wallet: Wallet) -> int:
             if raw.quote_currency == "BRL":
                 total_brl = raw.total_quote
             else:
-                # Convert via price (e.g. USDT trade → convert USDT amount to BRL)
                 price = await get_or_fetch_price(session, asset, tx_date)
                 total_brl = (price * raw.amount) if price else None
         else:

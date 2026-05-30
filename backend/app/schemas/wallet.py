@@ -3,18 +3,17 @@ from pydantic import BaseModel, Field
 from app.models.wallet import WalletType
 
 
-class ExchangeCredentials(BaseModel):
-    api_key: str
-    api_secret: str
-
-
 class WalletCreate(BaseModel):
     name: str = Field(max_length=100)
     wallet_type: WalletType
-    # For exchanges: provide api_key + api_secret
+    # Exchange credentials
     api_key: str | None = None
     api_secret: str | None = None
-    # For on-chain wallets: provide address
+    # CCXT exchange ID (e.g. "binance", "kraken", "bybit") — required for ccxt_exchange type
+    exchange_id: str | None = None
+    # Optional passphrase — required by some exchanges (OKX, Coinbase Pro, etc.)
+    password: str | None = None
+    # On-chain wallets
     address: str | None = None
     is_brazilian_exchange: bool = True
 
@@ -27,3 +26,11 @@ class WalletRead(BaseModel):
     wallet_type: WalletType
     is_brazilian_exchange: bool
     created_at: datetime
+    # Derived from credentials at read time — never exposes keys
+    exchange_id: str | None = None
+
+
+class ExchangeInfo(BaseModel):
+    id: str
+    name: str
+    popular: bool = False
