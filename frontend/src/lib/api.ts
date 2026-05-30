@@ -82,13 +82,15 @@ export interface GainReport {
 export interface DARFObligation {
   year: number;
   month: number;
+  darf_code: string;           // "4600" (BR) or "0507" (foreign)
+  is_foreign: boolean;
   net_gain_brl: string;
+  carryforward_applied_brl: string;
   exempt_threshold_brl: string;
   taxable_gain_brl: string;
-  tax_rate: string;
   tax_due_brl: string;
+  effective_rate: string;
   due_date: string;
-  is_foreign: boolean;
 }
 
 export interface DARFReport {

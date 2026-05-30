@@ -2,28 +2,30 @@
 Brazilian crypto tax calculation engine.
 
 Rules implemented:
-- Cost basis: custo médio ponderado (weighted average cost)
-- IRPF gains: taxed progressively (15% up to R$5M, 17.5% up to R$10M, 20% up to R$30M, 22.5% above)
-- Brazilian exchange exemption: if total monthly gains <= R$35k, no DARF due
-- Foreign exchange: gains always taxable regardless of amount
-- IN RFB 1888: self-reporting required when monthly volume on foreign exchange > R$30k
+- Cost basis: custo médio ponderado (weighted average cost), unified pool across all wallets
+- Brazilian exchange gains (code 4600): R$35k/month exemption; losses carry forward
+- Foreign exchange gains (code 0507): always taxable, no exemption; losses carry forward
+- BR and foreign carryforwards are tracked separately (different tax regimes)
+- Tax: progressive brackets (15% / 17.5% / 20% / 22.5%) applied tier-by-tier
+- IN RFB 1888: self-reporting when monthly trade volume on foreign exchange > R$30k
 - COAF: flag single transactions > R$10k
 """
 
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 
-DARF_EXEMPT_BRL = Decimal("35000")      # BR exchange monthly exemption
-IN1888_THRESHOLD_BRL = Decimal("30000") # Foreign exchange self-report threshold
-COAF_THRESHOLD_BRL = Decimal("10000")   # Single transaction AML threshold
+DARF_EXEMPT_BRL = Decimal("35000")       # BR exchange monthly exemption
+IN1888_THRESHOLD_BRL = Decimal("30000")  # Foreign exchange self-report threshold
+COAF_THRESHOLD_BRL = Decimal("10000")    # Single-transaction AML threshold
 
+# (upper_limit, marginal_rate) — last bracket has no upper limit sentinel
 TAX_BRACKETS = [
-    (Decimal("5000000"), Decimal("0.15")),
+    (Decimal("5000000"),  Decimal("0.15")),
     (Decimal("10000000"), Decimal("0.175")),
     (Decimal("30000000"), Decimal("0.20")),
-    (Decimal("inf"), Decimal("0.225")),
+    (None,                Decimal("0.225")),  # None = unbounded
 ]
 
 
@@ -55,11 +57,36 @@ class MonthKey:
         return self.year == other.year and self.month == other.month
 
 
-def compute_tax_rate(gain_brl: Decimal) -> Decimal:
-    for bracket_limit, rate in TAX_BRACKETS:
-        if gain_brl <= bracket_limit:
-            return rate
-    return Decimal("0.225")
+# ---------------------------------------------------------------------------
+# Tax calculation helpers
+# ---------------------------------------------------------------------------
+
+def compute_progressive_tax(gain_brl: Decimal) -> Decimal:
+    """
+    Apply progressive brackets tier-by-tier.
+    Each rate applies only to the portion within that bracket.
+    Returns total tax amount (not rate).
+    """
+    tax = Decimal(0)
+    prev_limit = Decimal(0)
+    for upper_limit, rate in TAX_BRACKETS:
+        if upper_limit is None:
+            tax += (gain_brl - prev_limit) * rate
+            break
+        taxable_in_bracket = min(gain_brl, upper_limit) - prev_limit
+        if taxable_in_bracket <= 0:
+            break
+        tax += taxable_in_bracket * rate
+        if gain_brl <= upper_limit:
+            break
+        prev_limit = upper_limit
+    return tax.quantize(Decimal("0.01"))
+
+
+def effective_rate(tax_due: Decimal, taxable_gain: Decimal) -> Decimal:
+    if taxable_gain == 0:
+        return Decimal(0)
+    return (tax_due / taxable_gain).quantize(Decimal("0.0001"))
 
 
 def last_business_day(year: int, month: int) -> date:
@@ -81,29 +108,45 @@ def darf_due_date(year: int, month: int) -> str:
     return last_business_day(year, month + 1).isoformat()
 
 
-def compute_gains(transactions: list[TxRecord]) -> dict[MonthKey, dict[str, dict]]:
-    """
-    Compute per-asset, per-month gains using custo médio ponderado.
-    Returns: {MonthKey: {asset: {"gain": Decimal, "loss": Decimal, "avg_cost": Decimal,
-                                  "proceeds": Decimal, "buy_amount": Decimal, "sell_amount": Decimal}}}
-    """
-    # Running average cost per asset: {asset: {"total_cost": Decimal, "quantity": Decimal}}
-    cost_basis: dict[str, dict] = defaultdict(lambda: {"total_cost": Decimal(0), "quantity": Decimal(0)})
+# ---------------------------------------------------------------------------
+# Core gains computation
+# ---------------------------------------------------------------------------
 
-    # Sort by date to maintain running average
-    txs = sorted(transactions, key=lambda t: t.executed_at)
+def _empty_asset_data() -> dict:
+    return {
+        "gain": Decimal(0), "loss": Decimal(0),
+        "proceeds": Decimal(0), "avg_cost_at_sale": Decimal(0),
+        "buy_amount": Decimal(0), "sell_amount": Decimal(0),
+    }
 
-    monthly: dict[MonthKey, dict[str, dict]] = defaultdict(
-        lambda: defaultdict(lambda: {
-            "gain": Decimal(0), "loss": Decimal(0),
-            "proceeds": Decimal(0), "avg_cost_at_sale": Decimal(0),
-            "buy_amount": Decimal(0), "sell_amount": Decimal(0),
-        })
+
+def _compute_gains_split(
+    transactions: list[TxRecord],
+) -> tuple[dict[MonthKey, dict[str, dict]], dict[MonthKey, dict[str, dict]]]:
+    """
+    Compute monthly gains using a **single unified cost basis pool** for all assets,
+    but attribute each realized gain/loss to the exchange type where the sell occurred.
+
+    This is the correct Brazilian treatment: cost basis is per-asset regardless of
+    which exchange holds it; tax regime (BR code 4600 vs foreign code 0507) depends
+    on where the disposal happens.
+
+    Returns: (br_monthly_gains, foreign_monthly_gains)
+    """
+    cost_basis: dict[str, dict] = defaultdict(
+        lambda: {"total_cost": Decimal(0), "quantity": Decimal(0)}
+    )
+    br_monthly: dict[MonthKey, dict] = defaultdict(
+        lambda: defaultdict(_empty_asset_data)
+    )
+    foreign_monthly: dict[MonthKey, dict] = defaultdict(
+        lambda: defaultdict(_empty_asset_data)
     )
 
-    for tx in txs:
+    for tx in sorted(transactions, key=lambda t: t.executed_at):
         mk = MonthKey(tx.executed_at.year, tx.executed_at.month)
         brl = tx.total_brl or Decimal(0)
+        monthly = br_monthly if tx.is_brazilian_exchange else foreign_monthly
 
         if tx.transaction_type in ("buy", "transfer_in", "earn", "swap_in"):
             cb = cost_basis[tx.asset]
@@ -126,16 +169,46 @@ def compute_gains(transactions: list[TxRecord]) -> dict[MonthKey, dict[str, dict
             else:
                 monthly[mk][tx.asset]["loss"] += abs(gain)
 
-            # Reduce cost basis
             cb["total_cost"] = max(Decimal(0), cb["total_cost"] - cost_of_sold)
             cb["quantity"] = max(Decimal(0), cb["quantity"] - tx.amount)
 
-    return {k: dict(v) for k, v in monthly.items()}
+    return (
+        {k: dict(v) for k, v in br_monthly.items()},
+        {k: dict(v) for k, v in foreign_monthly.items()},
+    )
+
+
+def compute_gains(transactions: list[TxRecord]) -> dict[MonthKey, dict[str, dict]]:
+    """
+    Unified monthly gains (BR + foreign merged) for the gains report.
+    Uses the same unified cost basis as _compute_gains_split.
+    """
+    br_monthly, foreign_monthly = _compute_gains_split(transactions)
+    all_keys = set(br_monthly) | set(foreign_monthly)
+    merged: dict[MonthKey, dict[str, dict]] = {}
+    for mk in all_keys:
+        combined: dict[str, dict] = {}
+        for asset, data in {**br_monthly.get(mk, {}), **foreign_monthly.get(mk, {})}.items():
+            if asset not in combined:
+                combined[asset] = _empty_asset_data()
+            d = combined[asset]
+            d["gain"] += data["gain"]
+            d["loss"] += data["loss"]
+            d["proceeds"] += data["proceeds"]
+            d["buy_amount"] += data["buy_amount"]
+            d["sell_amount"] += data["sell_amount"]
+            # avg_cost_at_sale: use most recent non-zero value (best effort for display)
+            if data["avg_cost_at_sale"] > 0:
+                d["avg_cost_at_sale"] = data["avg_cost_at_sale"]
+        merged[mk] = combined
+    return merged
 
 
 def get_cost_basis_snapshot(transactions: list[TxRecord]) -> dict[str, dict]:
     """Return current cost basis for all assets (for IRPF bens e direitos)."""
-    cost_basis: dict[str, dict] = defaultdict(lambda: {"total_cost": Decimal(0), "quantity": Decimal(0)})
+    cost_basis: dict[str, dict] = defaultdict(
+        lambda: {"total_cost": Decimal(0), "quantity": Decimal(0)}
+    )
     for tx in sorted(transactions, key=lambda t: t.executed_at):
         if tx.transaction_type in ("buy", "transfer_in", "earn", "swap_in"):
             cb = cost_basis[tx.asset]
@@ -150,61 +223,105 @@ def get_cost_basis_snapshot(transactions: list[TxRecord]) -> dict[str, dict]:
     return {k: v for k, v in cost_basis.items() if v["quantity"] > 0}
 
 
+# ---------------------------------------------------------------------------
+# DARF obligations
+# ---------------------------------------------------------------------------
+
 def darf_obligations(transactions: list[TxRecord], year: int) -> list[dict]:
-    """Calculate DARF obligations for each month of the given year."""
-    monthly_gains = compute_gains(transactions)
+    """
+    Calculate DARF obligations for each month of the given year.
+
+    BR gains (code 4600): R$35k/month exemption; net monthly losses carry forward.
+    Foreign gains (code 0507): always taxable; net monthly losses carry forward.
+    Carryforwards are independent between regimes.
+    Tax is calculated progressively tier-by-tier.
+    """
+    br_monthly, foreign_monthly = _compute_gains_split(transactions)
     obligations = []
+    br_loss_carry = Decimal(0)
+    foreign_loss_carry = Decimal(0)
 
     for month in range(1, 13):
         mk = MonthKey(year, month)
-        if mk not in monthly_gains:
-            continue
 
-        month_data = monthly_gains[mk]
-        total_gain = sum(d["gain"] for d in month_data.values())
-        total_loss = sum(d["loss"] for d in month_data.values())
-        net_gain = total_gain - total_loss
-        if net_gain <= 0:
-            continue
+        # --- Brazilian exchange (DARF code 4600) ---
+        br_data = br_monthly.get(mk, {})
+        br_gross_gain = sum(d["gain"] for d in br_data.values())
+        br_gross_loss = sum(d["loss"] for d in br_data.values())
+        br_net = br_gross_gain - br_gross_loss
 
-        # Determine if foreign transactions are involved
-        month_txs = [t for t in transactions
-                     if t.executed_at.year == year and t.executed_at.month == month]
-        has_foreign = any(not t.is_brazilian_exchange for t in month_txs)
+        br_carry_applied = Decimal(0)
+        if br_net > 0 and br_loss_carry > 0:
+            br_carry_applied = min(br_net, br_loss_carry)
+            br_net -= br_carry_applied
+            br_loss_carry -= br_carry_applied
+        elif br_net < 0:
+            br_loss_carry += abs(br_net)
+            br_net = Decimal(0)
 
-        if has_foreign:
-            exempt = Decimal(0)
-            reason = "Operações em exchanges estrangeiras: isenção de R$35k não se aplica"
-        else:
-            exempt = DARF_EXEMPT_BRL
-            reason = None
+        br_taxable = max(Decimal(0), br_net - DARF_EXEMPT_BRL)
+        if br_taxable > 0:
+            tax_due = compute_progressive_tax(br_taxable)
+            obligations.append({
+                "year": year,
+                "month": month,
+                "darf_code": "4600",
+                "is_foreign": False,
+                "net_gain_brl": br_net,
+                "carryforward_applied_brl": br_carry_applied,
+                "exempt_threshold_brl": DARF_EXEMPT_BRL,
+                "taxable_gain_brl": br_taxable,
+                "tax_due_brl": tax_due,
+                "effective_rate": effective_rate(tax_due, br_taxable),
+                "due_date": darf_due_date(year, month),
+            })
 
-        taxable = max(Decimal(0), net_gain - exempt)
-        if taxable <= 0:
-            continue
+        # --- Foreign exchange (DARF code 0507) ---
+        fgn_data = foreign_monthly.get(mk, {})
+        fgn_gross_gain = sum(d["gain"] for d in fgn_data.values())
+        fgn_gross_loss = sum(d["loss"] for d in fgn_data.values())
+        fgn_net = fgn_gross_gain - fgn_gross_loss
 
-        rate = compute_tax_rate(taxable)
-        tax_due = (taxable * rate).quantize(Decimal("0.01"))
+        fgn_carry_applied = Decimal(0)
+        if fgn_net > 0 and foreign_loss_carry > 0:
+            fgn_carry_applied = min(fgn_net, foreign_loss_carry)
+            fgn_net -= fgn_carry_applied
+            foreign_loss_carry -= fgn_carry_applied
+        elif fgn_net < 0:
+            foreign_loss_carry += abs(fgn_net)
+            fgn_net = Decimal(0)
 
-        obligations.append({
-            "year": year,
-            "month": month,
-            "net_gain_brl": net_gain,
-            "exempt_threshold_brl": exempt,
-            "taxable_gain_brl": taxable,
-            "tax_rate": rate,
-            "tax_due_brl": tax_due,
-            "due_date": darf_due_date(year, month),
-            "is_foreign": has_foreign,
-            "reason": reason,
-        })
+        if fgn_net > 0:
+            tax_due = compute_progressive_tax(fgn_net)
+            obligations.append({
+                "year": year,
+                "month": month,
+                "darf_code": "0507",
+                "is_foreign": True,
+                "net_gain_brl": fgn_net,
+                "carryforward_applied_brl": fgn_carry_applied,
+                "exempt_threshold_brl": Decimal(0),
+                "taxable_gain_brl": fgn_net,
+                "tax_due_brl": tax_due,
+                "effective_rate": effective_rate(tax_due, fgn_net),
+                "due_date": darf_due_date(year, month),
+            })
 
     return obligations
 
 
+# ---------------------------------------------------------------------------
+# IN RFB 1888
+# ---------------------------------------------------------------------------
+
+TRADE_TYPES = {"buy", "sell", "swap_in", "swap_out"}
+
+
 def in1888_report(transactions: list[TxRecord], year: int) -> list[dict]:
-    """Flag months where volume on foreign exchanges exceeds R$30k."""
-    entries = []
+    """
+    Flag months where trade volume on foreign exchanges exceeds R$30k.
+    Only counts actual trades (buy/sell/swap), not custody transfers.
+    """
     month_volume: dict[tuple, Decimal] = defaultdict(Decimal)
     month_count: dict[tuple, int] = defaultdict(int)
     wallet_info: dict[int, dict] = {}
@@ -212,11 +329,14 @@ def in1888_report(transactions: list[TxRecord], year: int) -> list[dict]:
     for tx in transactions:
         if tx.is_brazilian_exchange:
             continue
+        if tx.transaction_type not in TRADE_TYPES:
+            continue
         mk = (tx.executed_at.year, tx.executed_at.month, tx.wallet_id)
         month_volume[mk] += tx.total_brl or Decimal(0)
         month_count[mk] += 1
         wallet_info[tx.wallet_id] = {"name": tx.wallet_name}
 
+    entries = []
     for (yr, mo, wid), volume in month_volume.items():
         if yr != year:
             continue
@@ -232,8 +352,12 @@ def in1888_report(transactions: list[TxRecord], year: int) -> list[dict]:
     return sorted(entries, key=lambda e: (e["year"], e["month"]))
 
 
+# ---------------------------------------------------------------------------
+# COAF
+# ---------------------------------------------------------------------------
+
 def coaf_alerts(transactions: list[TxRecord]) -> list[dict]:
-    """Return transactions exceeding the COAF R$10k threshold."""
+    """Return transactions exceeding the COAF R$10k single-transaction threshold."""
     alerts = []
     for tx in transactions:
         brl = tx.total_brl or Decimal(0)

@@ -88,13 +88,15 @@ async def darf(year: int = Query(...), db: AsyncSession = Depends(get_db)):
     obligations = [
         DARFObligation(
             year=o["year"], month=o["month"],
+            darf_code=o["darf_code"],
+            is_foreign=o["is_foreign"],
             net_gain_brl=o["net_gain_brl"],
+            carryforward_applied_brl=o["carryforward_applied_brl"],
             exempt_threshold_brl=o["exempt_threshold_brl"],
             taxable_gain_brl=o["taxable_gain_brl"],
-            tax_rate=o["tax_rate"],
             tax_due_brl=o["tax_due_brl"],
+            effective_rate=o["effective_rate"],
             due_date=o["due_date"],
-            is_foreign=o["is_foreign"],
         )
         for o in obligations_raw
     ]

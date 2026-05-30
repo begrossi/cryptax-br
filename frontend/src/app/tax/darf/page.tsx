@@ -6,17 +6,26 @@ import { TaxExplainer } from "@/components/TaxExplainer";
 import { brl, pct, monthName } from "@/lib/format";
 
 function ObligationCard({ o }: { o: DARFObligation }) {
-  const gain = parseFloat(o.net_gain_brl);
-  const tax = parseFloat(o.tax_due_brl);
+  const carryApplied = parseFloat(o.carryforward_applied_brl);
 
   return (
     <div className="bg-white border border-amber-200 rounded-xl p-5 space-y-4">
       <div className="flex items-center justify-between">
-        <div>
+        <div className="space-y-1">
           <div className="font-semibold text-lg">{monthName(o.month)} {o.year}</div>
-          {o.is_foreign && (
-            <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Exchange estrangeira</span>
-          )}
+          <div className="flex items-center gap-2">
+            <span className={`text-xs px-2 py-0.5 rounded-full font-mono font-medium ${
+              o.is_foreign
+                ? "bg-purple-100 text-purple-700"
+                : "bg-blue-100 text-blue-700"
+            }`}>
+              Código {o.darf_code}
+            </span>
+            {o.is_foreign
+              ? <span className="text-xs text-slate-500">Exchange estrangeira</span>
+              : <span className="text-xs text-slate-500">Exchange brasileira</span>
+            }
+          </div>
         </div>
         <div className="text-right">
           <div className="text-2xl font-bold text-red-600">{brl(o.tax_due_brl)}</div>
@@ -29,19 +38,25 @@ function ObligationCard({ o }: { o: DARFObligation }) {
           <span className="text-slate-600">Ganho líquido no mês</span>
           <span className="font-mono font-medium">{brl(o.net_gain_brl)}</span>
         </div>
-        <div className="flex justify-between text-slate-500">
-          <span>Limite de isenção</span>
-          <span className="font-mono">
-            {o.is_foreign ? "R$ 0,00 (estrangeira)" : brl(o.exempt_threshold_brl)}
-          </span>
-        </div>
+        {carryApplied > 0 && (
+          <div className="flex justify-between text-green-700">
+            <span>Prejuízo compensado de meses anteriores</span>
+            <span className="font-mono">− {brl(o.carryforward_applied_brl)}</span>
+          </div>
+        )}
+        {!o.is_foreign && (
+          <div className="flex justify-between text-slate-500">
+            <span>Limite de isenção (exchange BR)</span>
+            <span className="font-mono">{brl(o.exempt_threshold_brl)}</span>
+          </div>
+        )}
         <div className="border-t border-slate-200 pt-2 flex justify-between">
           <span className="text-slate-600">Base de cálculo</span>
           <span className="font-mono font-medium">{brl(o.taxable_gain_brl)}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-slate-600">Alíquota</span>
-          <span className="font-mono">{pct(o.tax_rate)}</span>
+          <span className="text-slate-600">Alíquota efetiva</span>
+          <span className="font-mono">{pct(o.effective_rate)}</span>
         </div>
         <div className="border-t border-slate-200 pt-2 flex justify-between font-semibold">
           <span>DARF a pagar</span>
@@ -49,10 +64,18 @@ function ObligationCard({ o }: { o: DARFObligation }) {
         </div>
       </div>
 
-      <div className="text-xs text-slate-500 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
-        <strong>Como pagar:</strong> Acesse o SICALC (sicalc.receita.fazenda.gov.br), selecione o
-        código 4600 (Ganhos Líquidos em Operações na Bolsa), informe o período de apuração{" "}
-        <strong>{String(o.month).padStart(2, "0")}/{o.year}</strong> e o valor {brl(o.tax_due_brl)}.
+      <div className="text-xs text-slate-600 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 space-y-1">
+        <div>
+          <strong>Como pagar:</strong> Acesse o{" "}
+          <strong>SICALC</strong> (sicalc.receita.fazenda.gov.br), selecione o código{" "}
+          <strong className="font-mono">{o.darf_code}</strong>{" "}
+          ({o.is_foreign
+            ? "Ganho de Capital na Alienação de Bens ou Direitos"
+            : "Ganhos Líquidos em Operações em Bolsa"
+          }), informe o período de apuração{" "}
+          <strong>{String(o.month).padStart(2, "0")}/{o.year}</strong> e o valor{" "}
+          {brl(o.tax_due_brl)}.
+        </div>
       </div>
     </div>
   );
@@ -97,22 +120,22 @@ export default function DARFPage() {
       <TaxExplainer title="Como funciona o DARF para criptomoedas">
         <div className="space-y-2">
           <p>
-            <strong>Exchanges brasileiras:</strong> Se você teve ganho líquido mensal acima de{" "}
-            <strong>R$&nbsp;35.000</strong>, deve pagar 15% sobre o valor que exceder esse limite.
-            Abaixo disso, o ganho é isento.
+            <strong>Exchanges brasileiras — código 4600:</strong> Ganho líquido mensal acima de{" "}
+            <strong>R$&nbsp;35.000</strong> é tributado. Alíquota progressiva a partir de 15%.
+            Prejuízos de meses anteriores são compensados automaticamente.
           </p>
           <p>
-            <strong>Exchanges estrangeiras (Binance global, Coinbase, etc.):</strong> Não há isenção.
-            Qualquer ganho, mesmo R$&nbsp;1, é tributável à alíquota de 15%.
+            <strong>Exchanges estrangeiras — código 0507:</strong> Qualquer ganho é tributável,
+            sem limite de isenção. Prejuízos também compensam meses futuros,
+            mas <em>separadamente</em> dos prejuízos em exchanges brasileiras.
           </p>
           <p>
-            <strong>Custo médio ponderado:</strong> O custo de aquisição é calculado pela média
-            ponderada de todas as suas compras de cada ativo. Quando você vende, o ganho é a
-            diferença entre o preço de venda e esse custo médio.
+            <strong>Alíquotas progressivas:</strong> 15% até R$&nbsp;5M · 17,5% até R$&nbsp;10M ·
+            20% até R$&nbsp;30M · 22,5% acima. Cada faixa incide apenas sobre a parcela
+            dentro dela.
           </p>
           <p>
-            <strong>Vencimento:</strong> O DARF deve ser pago até o <em>último dia útil do mês
-            seguinte</em> ao do ganho. Código DARF: 4600.
+            <strong>Vencimento:</strong> Último dia útil do mês seguinte ao do ganho.
           </p>
         </div>
       </TaxExplainer>
@@ -127,7 +150,7 @@ export default function DARFPage() {
               <div>
                 <div className="font-semibold text-green-800">Nenhum DARF devido em {year}</div>
                 <div className="text-sm text-green-700 mt-0.5">
-                  Seus ganhos ficaram abaixo do limite de isenção em todos os meses, ou não houve vendas.
+                  Seus ganhos ficaram abaixo do limite de isenção em todos os meses, ou não houve vendas tributáveis.
                 </div>
               </div>
             </div>
@@ -138,7 +161,7 @@ export default function DARFPage() {
                 <div>
                   <span className="font-semibold">Total de DARF em {year}: </span>
                   <span className="text-red-600 font-bold text-lg">{brl(report.total_tax_due_brl)}</span>
-                  <span className="text-slate-500 text-sm ml-2">em {report.obligations.length} mês(es)</span>
+                  <span className="text-slate-500 text-sm ml-2">em {report.obligations.length} obrigação(ões)</span>
                 </div>
               </div>
               <div className="space-y-4">

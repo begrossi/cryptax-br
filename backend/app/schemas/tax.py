@@ -26,13 +26,15 @@ class GainReport(BaseModel):
 class DARFObligation(BaseModel):
     year: int
     month: int
+    darf_code: str           # "4600" (BR exchange) or "0507" (foreign exchange)
+    is_foreign: bool
     net_gain_brl: Decimal
+    carryforward_applied_brl: Decimal
     exempt_threshold_brl: Decimal
     taxable_gain_brl: Decimal
-    tax_rate: Decimal
     tax_due_brl: Decimal
-    due_date: str       # last business day of following month
-    is_foreign: bool    # foreign exchange = always taxable (no R$35k exemption)
+    effective_rate: Decimal  # tax_due / taxable_gain (progressive, not flat)
+    due_date: str
 
 
 class DARFReport(BaseModel):
