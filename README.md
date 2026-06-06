@@ -107,6 +107,20 @@ COINGECKO_API_KEY=
 DATABASE_URL=sqlite+aiosqlite:///./cryptax.db
 ```
 
+### Autenticação (opcional)
+
+Para proteger o acesso à interface web com senha, defina estas variáveis no arquivo `.env` raiz (ao lado do `docker-compose.yml`):
+
+```env
+# Segredo para assinar o cookie de sessão (gere com: openssl rand -hex 32)
+APP_SECRET=seu-segredo-aqui
+
+# Senha de acesso — deixe vazio para desabilitar a autenticação
+APP_PASSWORD=sua-senha-aqui
+```
+
+Com `APP_PASSWORD` definido, qualquer acesso não autenticado é redirecionado para `/login`. A sessão dura 30 dias (cookie `HttpOnly` + `SameSite=strict`). Sem a variável, o acesso é aberto.
+
 ---
 
 ## Como usar
