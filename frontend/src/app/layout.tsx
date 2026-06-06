@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Sidebar } from "@/components/Sidebar";
 
 export const metadata: Metadata = {
   title: "cryptax-br — Declaração de criptomoedas",
@@ -10,10 +9,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR">
-      <body className="flex bg-slate-50 text-slate-900 min-h-screen antialiased">
-        <Sidebar />
-        <main className="flex-1 overflow-auto pt-16 md:pt-0 p-4 md:p-8">{children}</main>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

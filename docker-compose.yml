@@ -23,6 +23,8 @@ services:
       - "3000:3000"
     environment:
       - BACKEND_URL=http://backend:8000
+      - APP_SECRET=${APP_SECRET:-}
+      - APP_PASSWORD=${APP_PASSWORD:-}
     depends_on:
       - backend
     restart: unless-stopped
@@ -30,7 +32,7 @@ services:
       - proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.cryptax.rule=Host(`cryptax.srv1690369.hstgr.cloud`)"
+      - "traefik.http.routers.cryptax.rule=Host(`cryptax-br.srv1690369.hstgr.cloud`)"
       - "traefik.http.routers.cryptax.entrypoints=websecure"
       - "traefik.http.routers.cryptax.tls.certresolver=letsencrypt"
       - "traefik.http.services.cryptax.loadbalancer.server.port=3000"

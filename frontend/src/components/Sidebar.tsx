@@ -21,7 +21,12 @@ const NAV = [
   { href: "/tax/coaf", label: "COAF", icon: Shield },
 ];
 
-export function Sidebar() {
+async function handleLogout() {
+  await fetch("/api/auth/logout", { method: "POST" });
+  window.location.href = "/login";
+}
+
+export function Sidebar({ authEnabled = false }: { authEnabled?: boolean }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -50,8 +55,16 @@ export function Sidebar() {
           )
         )}
       </nav>
-      <div className="p-4 border-t border-slate-700 text-xs text-slate-500">
-        Open-source · local-first
+      <div className="p-4 border-t border-slate-700 text-xs text-slate-500 flex items-center justify-between">
+        <span>Open-source · local-first</span>
+        {authEnabled && (
+          <button
+            onClick={handleLogout}
+            className="text-slate-400 hover:text-white transition-colors"
+          >
+            Sair
+          </button>
+        )}
       </div>
     </>
   );
