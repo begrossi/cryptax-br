@@ -150,6 +150,10 @@ export default function WalletsPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (isExchange && !form.exchange_id) {
+      setError("Selecione uma exchange da lista");
+      return;
+    }
     setSaving(true);
     setError("");
     try {

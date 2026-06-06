@@ -6,8 +6,13 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...options,
   });
   if (!res.ok) {
-    const err = await res.text();
-    throw new Error(err || res.statusText);
+    try {
+      const data = await res.json();
+      throw new Error(data.detail ?? data.error ?? res.statusText);
+    } catch (e) {
+      if (e instanceof Error && e.message !== res.statusText) throw e;
+      throw new Error(await res.text() || res.statusText);
+    }
   }
   return res.json();
 }
