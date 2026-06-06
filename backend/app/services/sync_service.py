@@ -106,7 +106,7 @@ async def _do_sync(session: AsyncSession, wallet: Wallet) -> int:
         address = wallet.credentials
         if wallet.wallet_type == WalletType.evm_address:
             for chain in CHAIN_CONFIG:
-                provider = EVMProvider(chain)
+                provider = EVMProvider(chain, api_key=settings.etherscan_api_key)
                 txs = await provider.fetch_transactions(address, since=since)
                 raw_txs.extend(txs)
 

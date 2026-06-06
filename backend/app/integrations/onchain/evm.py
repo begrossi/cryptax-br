@@ -2,8 +2,9 @@
 EVM on-chain transaction fetcher.
 Supports any Etherscan-compatible API (Ethereum, BSC, Polygon, Arbitrum, Base, etc.).
 
-Requires a free Etherscan API key (or equivalent per chain).
-Addresses are public — calling Etherscan reveals your address to them.
+Requires a free Etherscan API key (etherscan.io/apis).
+Without a key, Etherscan rate-limits to ~1 req/5s which causes sync failures
+when querying multiple chains and endpoints.
 """
 
 from datetime import date, datetime, timezone
@@ -46,6 +47,9 @@ CHAIN_CONFIG: dict[str, dict] = {
     },
 }
 
+# Etherscan messages that mean "valid empty result, not an error"
+_EMPTY_MESSAGES = {"no transactions found", "no token transfers found", "no records found"}
+
 
 class EVMProvider(BaseOnChainProvider):
     def __init__(self, chain: str, api_key: str = ""):
@@ -56,19 +60,47 @@ class EVMProvider(BaseOnChainProvider):
         self.native_asset = cfg["native_asset"]
         self.native_decimals = cfg["decimals"]
 
+    def _params(self, extra: dict) -> dict:
+        base = {"apikey": self.api_key or "YourApiKeyToken"}
+        base.update(extra)
+        return base
+
+    async def _get(self, client: httpx.AsyncClient, params: dict, label: str) -> list:
+        """Fetch one Etherscan page. Returns results list or raises on API errors."""
+        try:
+            resp = await client.get(self.api_url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+        except httpx.HTTPError as exc:
+            raise RuntimeError(f"[{self.chain}] HTTP error fetching {label}: {exc}") from exc
+
+        status = data.get("status")
+        message = str(data.get("message", "")).lower()
+        result = data.get("result", [])
+
+        if status == "1":
+            return result if isinstance(result, list) else []
+
+        # Empty address — not an error
+        if message in _EMPTY_MESSAGES or result == []:
+            return []
+
+        # Real API error (rate limit, invalid key, etc.)
+        hint = " — set ETHERSCAN_API_KEY in .env (free at etherscan.io/apis)" if not self.api_key else ""
+        raise RuntimeError(
+            f"[{self.chain}] Etherscan error fetching {label}: {data.get('message', 'unknown')}{hint}"
+        )
+
     async def fetch_transactions(
         self, address: str, since: date | None = None
     ) -> list[OnChainTransaction]:
         txs: list[OnChainTransaction] = []
         address = address.lower()
-        start_block = 0
 
         async with httpx.AsyncClient(timeout=30) as client:
-            # Native token transactions
-            native = await self._fetch_normal_txs(client, address, start_block)
+            native = await self._fetch_normal_txs(client, address)
             txs.extend(native)
-            # ERC-20 token transfers
-            tokens = await self._fetch_token_transfers(client, address, start_block)
+            tokens = await self._fetch_token_transfers(client, address)
             txs.extend(tokens)
 
         if since:
@@ -77,36 +109,26 @@ class EVMProvider(BaseOnChainProvider):
         return txs
 
     async def _fetch_normal_txs(
-        self, client: httpx.AsyncClient, address: str, start_block: int
+        self, client: httpx.AsyncClient, address: str
     ) -> list[OnChainTransaction]:
-        params = {
+        params = self._params({
             "module": "account",
             "action": "txlist",
             "address": address,
-            "startblock": start_block,
+            "startblock": 0,
             "endblock": 99999999,
             "sort": "asc",
-            "apikey": self.api_key or "YourApiKeyToken",
-        }
-        try:
-            resp = await client.get(self.api_url, params=params)
-            resp.raise_for_status()
-            data = resp.json()
-        except httpx.HTTPError:
-            return []
-
-        if data.get("status") != "1":
-            return []
+        })
+        rows = await self._get(client, params, "native txs")
 
         result = []
-        for tx in data["result"]:
-            if tx["isError"] == "1":
+        for tx in rows:
+            if tx.get("isError") == "1":
                 continue
-            ts = datetime.fromtimestamp(int(tx["timeStamp"]), tz=timezone.utc).date()
             value = Decimal(tx["value"]) / Decimal(10 ** self.native_decimals)
             if value == 0:
                 continue
-
+            ts = datetime.fromtimestamp(int(tx["timeStamp"]), tz=timezone.utc).date()
             is_incoming = tx["to"].lower() == address
             result.append(OnChainTransaction(
                 external_id=f"{self.chain}-{tx['hash']}",
@@ -122,38 +144,29 @@ class EVMProvider(BaseOnChainProvider):
         return result
 
     async def _fetch_token_transfers(
-        self, client: httpx.AsyncClient, address: str, start_block: int
+        self, client: httpx.AsyncClient, address: str
     ) -> list[OnChainTransaction]:
-        params = {
+        params = self._params({
             "module": "account",
             "action": "tokentx",
             "address": address,
-            "startblock": start_block,
+            "startblock": 0,
             "endblock": 99999999,
             "sort": "asc",
-            "apikey": self.api_key or "YourApiKeyToken",
-        }
-        try:
-            resp = await client.get(self.api_url, params=params)
-            resp.raise_for_status()
-            data = resp.json()
-        except httpx.HTTPError:
-            return []
-
-        if data.get("status") != "1":
-            return []
+        })
+        rows = await self._get(client, params, "token transfers")
 
         result = []
-        for tx in data["result"]:
-            ts = datetime.fromtimestamp(int(tx["timeStamp"]), tz=timezone.utc).date()
+        for tx in rows:
             decimals = int(tx.get("tokenDecimal", 18))
             amount = Decimal(tx["value"]) / Decimal(10 ** decimals)
             if amount == 0:
                 continue
+            ts = datetime.fromtimestamp(int(tx["timeStamp"]), tz=timezone.utc).date()
             symbol = tx.get("tokenSymbol", "UNKNOWN")
             is_incoming = tx["to"].lower() == address
             result.append(OnChainTransaction(
-                external_id=f"{self.chain}-token-{tx['hash']}-{tx['tokenSymbol']}",
+                external_id=f"{self.chain}-token-{tx['hash']}-{symbol}",
                 executed_at=ts,
                 transaction_type="transfer_in" if is_incoming else "transfer_out",
                 asset=symbol,

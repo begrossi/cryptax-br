@@ -11,6 +11,7 @@ services:
       - DATABASE_URL=sqlite+aiosqlite:////app/data/cryptax.db
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
       - COINGECKO_API_KEY=${COINGECKO_API_KEY:-}
+      - ETHERSCAN_API_KEY=${ETHERSCAN_API_KEY:-}
     restart: unless-stopped
     networks:
       - proxy
