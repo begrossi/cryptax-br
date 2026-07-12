@@ -1,14 +1,8 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
-  async rewrites() {
-    return [
-      {
-        source: "/api/:path((?!auth/).*)",
-        destination: `${process.env.BACKEND_URL || "http://localhost:8000"}/:path*`,
-      },
-    ];
-  },
-};
+// Backend proxying is handled by the catch-all Route Handler at
+// src/app/api/[...path]/route.ts so we can enforce the session and inject the
+// backend API token server-side (a rewrite cannot add request headers).
+const nextConfig: NextConfig = {};
 
 export default nextConfig;
