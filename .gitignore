@@ -2,6 +2,8 @@
 backend/.venv/
 backend/cryptax.db
 backend/data/
+backend/.crypto_salt
+.crypto_salt
 backend/.env
 backend/__pycache__/
 backend/**/__pycache__/
