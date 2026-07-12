@@ -121,6 +121,23 @@ APP_PASSWORD=sua-senha-aqui
 
 Com `APP_PASSWORD` definido, qualquer acesso não autenticado é redirecionado para `/login`. A sessão dura 30 dias (cookie `HttpOnly` + `SameSite=strict`). Sem a variável, o acesso é aberto.
 
+### Autenticação da API (backend)
+
+O backend (FastAPI) é um processo separado do frontend. Para que ele não fique
+aberto a quem alcançar a porta 8000, defina um segredo compartilhado no `.env`
+raiz — o proxy do frontend o envia automaticamente em cada requisição:
+
+```env
+# Segredo compartilhado entre frontend e backend (gere com: openssl rand -hex 32)
+# Backend rejeita qualquer requisição sem ele. Vazio = backend aberto (dev local).
+API_TOKEN=seu-token-aqui
+```
+
+Com `docker compose`, o backend fica exposto apenas em `127.0.0.1:8000` (o
+frontend o acessa pela rede interna). Ao definir `API_TOKEN`, requisições sem o
+header `X-API-Token` correto recebem `401`. Se vazio, o backend registra um aviso
+no startup e permanece aberto — use apenas em dev local de usuário único.
+
 ---
 
 ## Como usar

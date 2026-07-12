@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-in-production-32-chars!!"
     coingecko_api_key: str = ""
     etherscan_api_key: str = ""
+    # Shared secret required on every API request (header X-API-Token).
+    # Empty = auth disabled (local dev only — the backend is then fully open).
+    api_token: str = ""
     debug: bool = False
 
 
