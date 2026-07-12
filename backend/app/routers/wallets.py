@@ -1,13 +1,15 @@
 import ccxt
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, delete as sql_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import Wallet, WalletType
+from app.models.transaction import Transaction
+from app.models.sync_log import SyncLog
 from app.schemas.wallet import WalletCreate, WalletRead, ExchangeInfo
-from app.services.crypto import encrypt_credentials, decrypt_credentials
+from app.services.crypto import encrypt_credentials, decrypt_credentials, InsecureSecretKeyError
 
 router = APIRouter(prefix="/wallets", tags=["wallets"])
 exchanges_router = APIRouter(prefix="/exchanges", tags=["exchanges"])
@@ -76,7 +78,10 @@ async def create_wallet(body: WalletCreate, db: AsyncSession = Depends(get_db)):
             creds["exchange_id"] = body.exchange_id
         if body.password:
             creds["password"] = body.password
-        credentials = encrypt_credentials(creds)
+        try:
+            credentials = encrypt_credentials(creds)
+        except InsecureSecretKeyError as e:
+            raise HTTPException(500, str(e))
 
     elif body.wallet_type in ONCHAIN_TYPES:
         if not body.address:
@@ -112,10 +117,23 @@ async def list_wallets(db: AsyncSession = Depends(get_db)):
     return out
 
 
+@router.delete("/{wallet_id}/transactions", status_code=204)
+async def clear_wallet_transactions(wallet_id: int, db: AsyncSession = Depends(get_db)):
+    """Delete all transactions and sync logs for a wallet, so it can be re-synced from scratch."""
+    wallet = await db.get(Wallet, wallet_id)
+    if not wallet:
+        raise HTTPException(404, "Wallet not found")
+    await db.execute(sql_delete(Transaction).where(Transaction.wallet_id == wallet_id))
+    await db.execute(sql_delete(SyncLog).where(SyncLog.wallet_id == wallet_id))
+    await db.commit()
+
+
 @router.delete("/{wallet_id}", status_code=204)
 async def delete_wallet(wallet_id: int, db: AsyncSession = Depends(get_db)):
     wallet = await db.get(Wallet, wallet_id)
     if not wallet:
         raise HTTPException(404, "Wallet not found")
+    await db.execute(sql_delete(Transaction).where(Transaction.wallet_id == wallet_id))
+    await db.execute(sql_delete(SyncLog).where(SyncLog.wallet_id == wallet_id))
     await db.delete(wallet)
     await db.commit()

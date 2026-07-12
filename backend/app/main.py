@@ -20,6 +20,11 @@ async def lifespan(app: FastAPI):
             "API_TOKEN is not set — the backend API is UNAUTHENTICATED and open to "
             "anyone who can reach it. Set API_TOKEN before exposing this service."
         )
+    if settings.secret_key_is_default:
+        logger.warning(
+            "SECRET_KEY is the default placeholder — exchange credentials cannot be "
+            "stored until you set a random SECRET_KEY (openssl rand -hex 32)."
+        )
     await init_db()
     yield
 
