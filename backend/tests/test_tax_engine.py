@@ -678,3 +678,44 @@ def test_unpriced_skips_self_transfers_and_fees():
         _unpriced_tx(2, "fee", None),                         # fee valued from pool -> skip
     ]
     assert unpriced_transactions(txs) == []
+
+
+# ---------------------------------------------------------------------------
+# Issue 6: avg_cost_at_sale must be quantity-weighted, merge must not drop data
+# ---------------------------------------------------------------------------
+
+def test_avg_cost_weighted_across_sells_same_regime():
+    txs = [
+        tx(1, date(2024, 1, 1),  "buy",  "BTC", "1", "100000"),  # pool: 1 @ 100k
+        tx(2, date(2024, 1, 5),  "sell", "BTC", "1", "150000"),  # sold @ avg 100k
+        tx(3, date(2024, 1, 10), "buy",  "BTC", "1", "300000"),  # pool: 1 @ 300k
+        tx(4, date(2024, 1, 20), "sell", "BTC", "1", "350000"),  # sold @ avg 300k
+    ]
+    data = compute_gains(txs)[MonthKey(2024, 1)]["BTC"]
+    # Weighted: (100k*1 + 300k*1) / 2 = 200k — not "last sell wins" (300k)
+    assert data["avg_cost_at_sale"] == Decimal("200000")
+
+
+def test_avg_cost_weighted_across_regimes():
+    txs = [
+        tx(1, date(2024, 1, 1), "buy",  "BTC", "2", "200000"),                # pool avg 100k
+        tx(2, date(2024, 1, 5), "sell", "BTC", "1", "150000", is_br=True),    # BR sell, avg 100k
+        tx(3, date(2024, 1, 6), "buy",  "BTC", "1", "400000"),                # pool: 2 @ 250k avg
+        tx(4, date(2024, 1, 9), "sell", "BTC", "1", "300000", is_br=False, wallet_id=2),  # foreign sell, avg 250k
+    ]
+    data = compute_gains(txs)[MonthKey(2024, 1)]["BTC"]
+    # Weighted merge: (100k*1 + 250k*1) / 2 = 175k
+    assert data["avg_cost_at_sale"] == Decimal("175000")
+
+
+def test_merge_does_not_drop_br_data_when_asset_in_both_regimes():
+    txs = [
+        tx(1, date(2024, 1, 1), "buy",  "BTC", "2", "200000"),
+        tx(2, date(2024, 1, 5), "sell", "BTC", "1", "180000", is_br=True),                 # BR gain 80k
+        tx(3, date(2024, 1, 9), "sell", "BTC", "1", "160000", is_br=False, wallet_id=2),   # foreign gain 60k
+    ]
+    data = compute_gains(txs)[MonthKey(2024, 1)]["BTC"]
+    # Both regimes' sells must be present: proceeds 340k, gain 140k, sell_amount 2
+    assert data["proceeds"] == Decimal("340000")
+    assert data["gain"] == Decimal("140000")
+    assert data["sell_amount"] == Decimal("2")

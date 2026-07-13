@@ -170,6 +170,10 @@ def _empty_asset_data() -> dict:
         "gain": Decimal(0), "loss": Decimal(0),
         "proceeds": Decimal(0), "avg_cost_at_sale": Decimal(0),
         "buy_amount": Decimal(0), "sell_amount": Decimal(0),
+        # Total BRL cost of everything sold this month; avg_cost_at_sale is
+        # derived from it (cost_of_sold / sell_amount) so multiple sells at
+        # different pool averages produce a quantity-weighted figure.
+        "cost_of_sold": Decimal(0),
     }
 
 
@@ -219,9 +223,13 @@ def _compute_gains_split(
             cost_of_sold = avg * tx.amount
             gain = brl - cost_of_sold
 
-            monthly[mk][tx.asset]["sell_amount"] += tx.amount
-            monthly[mk][tx.asset]["proceeds"] += brl
-            monthly[mk][tx.asset]["avg_cost_at_sale"] = avg
+            d = monthly[mk][tx.asset]
+            d["sell_amount"] += tx.amount
+            d["proceeds"] += brl
+            d["cost_of_sold"] += cost_of_sold
+            d["avg_cost_at_sale"] = (
+                d["cost_of_sold"] / d["sell_amount"] if d["sell_amount"] > 0 else Decimal(0)
+            )
 
             if gain > 0:
                 monthly[mk][tx.asset]["gain"] += gain
@@ -260,7 +268,11 @@ def compute_gains(transactions: list[TxRecord]) -> dict[MonthKey, dict[str, dict
     merged: dict[MonthKey, dict[str, dict]] = {}
     for mk in all_keys:
         combined: dict[str, dict] = {}
-        for asset, data in {**br_monthly.get(mk, {}), **foreign_monthly.get(mk, {})}.items():
+        # Iterate both regime dicts as (asset, data) pairs. A dict union here
+        # would drop the BR entry whenever the same asset was sold on both a
+        # BR and a foreign exchange in the same month.
+        month_items = list(br_monthly.get(mk, {}).items()) + list(foreign_monthly.get(mk, {}).items())
+        for asset, data in month_items:
             if asset not in combined:
                 combined[asset] = _empty_asset_data()
             d = combined[asset]
@@ -269,9 +281,12 @@ def compute_gains(transactions: list[TxRecord]) -> dict[MonthKey, dict[str, dict
             d["proceeds"] += data["proceeds"]
             d["buy_amount"] += data["buy_amount"]
             d["sell_amount"] += data["sell_amount"]
-            # avg_cost_at_sale: use most recent non-zero value (best effort for display)
-            if data["avg_cost_at_sale"] > 0:
-                d["avg_cost_at_sale"] = data["avg_cost_at_sale"]
+            d["cost_of_sold"] += data["cost_of_sold"]
+            # Quantity-weighted across both regimes (BR + foreign sells of the
+            # same asset in the same month), not "last non-zero wins".
+            d["avg_cost_at_sale"] = (
+                d["cost_of_sold"] / d["sell_amount"] if d["sell_amount"] > 0 else Decimal(0)
+            )
         merged[mk] = combined
     return merged
 
