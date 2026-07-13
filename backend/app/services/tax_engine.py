@@ -420,6 +420,44 @@ def earn_income_by_year(transactions: list[TxRecord], year: int) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Data quality — missing BRL prices
+# ---------------------------------------------------------------------------
+
+# Types whose BRL value feeds cost basis or proceeds. A missing price on any of
+# these silently zeroes cost/proceeds and inflates (or hides) the taxable gain.
+# 'fee' is excluded: gas is valued from the pool's average cost, not total_brl.
+PRICED_TYPES = {
+    "buy", "sell", "swap_in", "swap_out", "transfer_in", "transfer_out", "earn",
+}
+
+
+def unpriced_transactions(transactions: list[TxRecord]) -> list[dict]:
+    """
+    Return transactions that affect tax math but have no BRL price.
+
+    These must be surfaced before trusting any DARF/IRPF number: a missing
+    price is treated as R$0, which inflates gains (0 cost on a sale) or hides
+    them (0 proceeds). Self-transfers are skipped — they carry no tax value.
+    """
+    out: list[dict] = []
+    for tx in transactions:
+        if tx.is_self_transfer:
+            continue
+        if tx.transaction_type not in PRICED_TYPES:
+            continue
+        if tx.total_brl is None or tx.total_brl <= 0:
+            out.append({
+                "id": tx.id,
+                "wallet_name": tx.wallet_name,
+                "executed_at": tx.executed_at.isoformat(),
+                "transaction_type": tx.transaction_type,
+                "asset": tx.asset,
+                "amount": tx.amount,
+            })
+    return sorted(out, key=lambda x: (x["executed_at"], x["id"]))
+
+
+# ---------------------------------------------------------------------------
 # IN RFB 1888
 # ---------------------------------------------------------------------------
 

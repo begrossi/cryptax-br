@@ -41,6 +41,19 @@ class DARFReport(BaseModel):
     year: int
     obligations: list[DARFObligation]
     total_tax_due_brl: Decimal
+    # Number of tax-relevant transactions this year with no BRL price. When > 0
+    # the figures above are unreliable (missing prices count as R$0). See
+    # GET /tax/unpriced for the list to fix.
+    unpriced_transaction_count: int = 0
+
+
+class UnpricedTransaction(BaseModel):
+    id: int
+    wallet_name: str
+    executed_at: str
+    transaction_type: str
+    asset: str
+    amount: Decimal
 
 
 class IRPFAsset(BaseModel):
