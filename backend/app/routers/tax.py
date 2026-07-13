@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import Transaction, Wallet
-from app.schemas.tax import GainReport, AssetGain, DARFReport, DARFObligation, IRPFReport, IRPFAsset, EarnIncomeEntry, IN1888Report, IN1888Entry, COAFAlert
+from app.schemas.tax import GainReport, AssetGain, DARFReport, DARFObligation, IRPFReport, IRPFAsset, EarnIncomeEntry, IN1888Report, IN1888Entry, COAFAlert, UnpricedTransaction
 from app.services import tax_engine
 from app.services.tax_engine import TxRecord
 
@@ -102,7 +102,12 @@ async def darf(year: int = Query(...), db: AsyncSession = Depends(get_db)):
         for o in obligations_raw
     ]
     total = sum(o.tax_due_brl for o in obligations)
-    return DARFReport(year=year, obligations=obligations, total_tax_due_brl=total)
+    year_records = [r for r in records if r.executed_at.year == year]
+    unpriced = tax_engine.unpriced_transactions(year_records)
+    return DARFReport(
+        year=year, obligations=obligations, total_tax_due_brl=total,
+        unpriced_transaction_count=len(unpriced),
+    )
 
 
 @router.get("/irpf", response_model=IRPFReport)
@@ -168,6 +173,17 @@ async def in1888(year: int = Query(...), month: int | None = Query(None), db: As
     ]
     must_report_months = sorted({e.month for e in entries if e.must_report})
     return IN1888Report(year=year, entries=entries, months_requiring_report=must_report_months)
+
+
+@router.get("/unpriced", response_model=list[UnpricedTransaction])
+async def unpriced(year: int | None = Query(None), db: AsyncSession = Depends(get_db)):
+    """
+    Tax-relevant transactions with no BRL price. Missing prices are treated as
+    R$0 and silently distort gains, so these must be fixed before trusting any
+    DARF/IRPF figure. Optionally filtered to a year.
+    """
+    records = await _load_tx_records(db, year=year)
+    return [UnpricedTransaction(**u) for u in tax_engine.unpriced_transactions(records)]
 
 
 @router.get("/coaf", response_model=list[COAFAlert])

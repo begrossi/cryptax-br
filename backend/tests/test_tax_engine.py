@@ -21,6 +21,7 @@ from app.services.tax_engine import (
     _easter,
     _br_holidays,
     compute_progressive_tax,
+    unpriced_transactions,
     DARF_EXEMPT_BRL,
     TRADE_TYPES,
 )
@@ -647,3 +648,33 @@ def test_cost_basis_snapshot():
     # Remaining: 1 BTC, avg cost was 150k
     assert snapshot["BTC"]["quantity"] == Decimal("1")
     assert snapshot["BTC"]["total_cost"] == Decimal("150000")
+
+
+# ---------------------------------------------------------------------------
+# Issue 5: surface transactions missing BRL prices
+# ---------------------------------------------------------------------------
+
+def _unpriced_tx(id, tx_type, total_brl, is_self=False):
+    return TxRecord(
+        id=id, wallet_id=1, wallet_name="W", is_brazilian_exchange=True,
+        executed_at=date(2024, 5, 10), transaction_type=tx_type, asset="BTC",
+        amount=Decimal("1"), total_brl=total_brl, is_self_transfer=is_self,
+    )
+
+
+def test_unpriced_flags_none_and_zero():
+    txs = [
+        _unpriced_tx(1, "buy", None),            # missing -> flagged
+        _unpriced_tx(2, "sell", Decimal("0")),   # zero -> flagged
+        _unpriced_tx(3, "buy", Decimal("100")),  # priced -> ok
+    ]
+    ids = [u["id"] for u in unpriced_transactions(txs)]
+    assert ids == [1, 2]
+
+
+def test_unpriced_skips_self_transfers_and_fees():
+    txs = [
+        _unpriced_tx(1, "transfer_out", None, is_self=True),  # self-transfer -> skip
+        _unpriced_tx(2, "fee", None),                         # fee valued from pool -> skip
+    ]
+    assert unpriced_transactions(txs) == []
