@@ -40,8 +40,8 @@ Ao adicionar uma carteira, escolha a exchange em uma lista filtrável com todos 
 
 **On-chain (DeFi):**
 - EVM: Ethereum, BSC, Polygon, Arbitrum, Base, Optimism
-- Bitcoin _(em breve)_
-- Solana _(em breve)_
+- Bitcoin (via mempool.space — sem chave de API)
+- Solana (via RPC público — apenas SOL nativo; tokens SPL em breve)
 
 **Preços históricos em BRL:** CoinGecko (cache local — nenhuma consulta repetida para a mesma data).
 
@@ -208,8 +208,9 @@ cryptax-br/
 
 PRs são bem-vindos. Áreas prioritárias:
 
-- [ ] Suporte a Bitcoin (mempool.space)
-- [ ] Suporte a Solana (Helius)
+- [x] Suporte a Bitcoin (mempool.space)
+- [x] Suporte a Solana (RPC público — SOL nativo)
+- [ ] Tokens SPL na Solana
 - [ ] Exportação de relatório em PDF
 - [ ] Importação de CSV de exchanges (fallback offline para exchanges sem API)
 - [ ] Suporte a PostgreSQL como banco principal (já preparado no código)
