@@ -3,6 +3,7 @@ Orchestrates syncing transactions from exchanges and on-chain sources.
 Handles BRL price resolution, deduplication, and cost basis population.
 """
 
+import asyncio
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
@@ -14,6 +15,8 @@ from app.integrations.exchanges.base import RawTransaction
 from app.integrations.exchanges.ccxt_exchange import CCXTExchange
 from app.integrations.onchain.base import OnChainTransaction
 from app.integrations.onchain.evm import EVMProvider, CHAIN_CONFIG
+from app.integrations.onchain.bitcoin import BitcoinProvider
+from app.integrations.onchain.solana import SolanaProvider
 from app.integrations.prices.coingecko import fetch_price_brl
 from app.models import Transaction, TransactionType, Wallet, WalletType, SyncLog, SyncStatus, AssetPrice
 from app.services.crypto import decrypt_credentials
@@ -68,9 +71,13 @@ async def sync_wallet(session: AsyncSession, wallet_id: int) -> SyncLog:
     await session.flush()
 
     try:
-        added = await _do_sync(session, wallet)
+        added, warnings = await _do_sync(session, wallet)
+        # Partial failures (e.g. one EVM chain rate-limited) don't fail the whole
+        # sync — the data that did load is kept, and the issues are recorded.
         log.status = SyncStatus.success
         log.transactions_added = added
+        if warnings:
+            log.error_message = (" | ".join(warnings))[:900]
     except Exception as exc:
         log.status = SyncStatus.error
         log.error_message = str(exc)[:900]
@@ -82,7 +89,7 @@ async def sync_wallet(session: AsyncSession, wallet_id: int) -> SyncLog:
     return log
 
 
-async def _do_sync(session: AsyncSession, wallet: Wallet) -> int:
+async def _do_sync(session: AsyncSession, wallet: Wallet) -> tuple[int, list[str]]:
     # Find last synced date for incremental sync
     stmt = select(Transaction.executed_at).where(
         Transaction.wallet_id == wallet.id
@@ -91,6 +98,7 @@ async def _do_sync(session: AsyncSession, wallet: Wallet) -> int:
     since = last_date_row.date() if last_date_row else None
 
     raw_txs: list[RawTransaction | OnChainTransaction] = []
+    warnings: list[str] = []
 
     exchange_id = _get_ccxt_exchange_id(wallet)
     if exchange_id:
@@ -105,10 +113,26 @@ async def _do_sync(session: AsyncSession, wallet: Wallet) -> int:
     elif wallet.wallet_type in ONCHAIN_WALLET_TYPES:
         address = wallet.credentials
         if wallet.wallet_type == WalletType.evm_address:
+            # Fetch each chain independently — a failure on one (rate limit,
+            # plan limit, etc.) must not prevent the others from loading.
             for chain in CHAIN_CONFIG:
                 provider = EVMProvider(chain, api_key=settings.etherscan_api_key)
-                txs = await provider.fetch_transactions(address, since=since)
-                raw_txs.extend(txs)
+                try:
+                    txs = await provider.fetch_transactions(address, since=since)
+                    raw_txs.extend(txs)
+                except Exception as exc:
+                    warnings.append(str(exc))
+                await asyncio.sleep(0.25)
+        elif wallet.wallet_type == WalletType.bitcoin_address:
+            try:
+                raw_txs.extend(await BitcoinProvider().fetch_transactions(address, since=since))
+            except Exception as exc:
+                warnings.append(str(exc))
+        elif wallet.wallet_type == WalletType.solana_address:
+            try:
+                raw_txs.extend(await SolanaProvider().fetch_transactions(address, since=since))
+            except Exception as exc:
+                warnings.append(str(exc))
 
     added = 0
     for raw in raw_txs:
@@ -147,10 +171,12 @@ async def _do_sync(session: AsyncSession, wallet: Wallet) -> int:
             price_brl=price_brl,
             total_brl=total_brl,
             chain=getattr(raw, "chain", None),
+            from_address=getattr(raw, "from_address", None),
+            to_address=getattr(raw, "to_address", None),
             notes=raw.notes,
         )
         session.add(tx)
         added += 1
 
     await session.flush()
-    return added
+    return added, warnings
